@@ -13,12 +13,12 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from . import SoloError, audit, booktables, campaign, creation, desk, extract, foundry, gm, library, oracle, packs
+from . import SoloError, audit, booktables, campaign, creation, desk, extract, foundry, generate, gm, library, oracle, packs
 from .library import REPO
 from .packs import ATTITUDES
 
 PLUGIN_ID = "cabral.oma-solorpg"
-SKILLS = ("solo-gm", "solo-import", "solo-rules-import")
+SKILLS = ("solo-gm", "solo-import", "solo-rules-import", "solo-campaign")
 AGENT_SKILL_DIRS = (".claude/skills", ".agents/skills", ".codex/skills", ".pi/agent/skills")
 # What the GM may run without asking. Only commands that read or play this campaign:
 # setup, new, use, play, character --out and import write elsewhere on disk, and a shared
@@ -90,7 +90,9 @@ def cmd_new(args):
     """Everything but the adventure has a default: its system, a random hero, and a
     folder under ~/Games/solo/campaigns named after both."""
     adventure_path = library.find_adventure(args.adventure) if args.adventure else library.only("adventure")
-    adventure = packs.load_adventure(adventure_path)
+    adventure = packs.load_adventure(adventure_path, drafts=False)
+    if adventure["draft"]:
+        raise SoloError(f"{adventure['title']} is still being written: it can begin once draft = true is gone from its adventure.toml")
     system_name = args.system or adventure["system"]
     if not system_name:
         raise SoloError(f"{adventure['title']} doesn't name its system: add system = \"...\" to adventure.toml or pass --system")
@@ -425,6 +427,48 @@ def cmd_validate(args):
         print("ok: " + " and ".join(p["dir"].name for p in (system, adventure) if p))
         for warning in packs.lint(adventure) if adventure else []:
             print(f"worth a look: {warning}")
+
+
+def cmd_campaign(args):
+    """Campaigns generated from a premise: roll one, roll its next mission, roll for its
+    author, and check what stands between it and play."""
+    if args.action == "new":
+        if not args.target:
+            raise SoloError('which adventure? solo campaign new <id> --premise "..."')
+        target = Path(args.target).expanduser()
+        root = target if len(target.parts) > 1 or args.target.startswith((".", "~")) else library.home() / "adventures" / args.target
+        system = args.system or "dragonbane"
+        made = generate.new(root, library.find_system(system), args.premise, tone=args.tone or "", missions=args.missions,
+                            title=args.title, seed=args.seed, system_name=Path(system).name)
+        mission = made["mission"]
+        print(f"Rolled {made['title']} in {made['dir']} (seed {made['seed']}, {made['rolls']} rolls): the hub, "
+              f"and mission 1 of {made['missions']} ({', '.join(mission['scenes'])}).")
+        print("It's marked draft and every file says \"rolled, not yet written\": write it up with the solo-campaign skill, "
+              f"then solo campaign check {made['dir']}.")
+    elif args.action == "next":
+        made = generate.next_mission(Path(args.target).expanduser() if args.target else campaign.find(args.campaign))
+        print(f"Rolled mission {made['mission']} of {made['missions']} into {made['dir']} ({made['rolls']} rolls): "
+              f"{', '.join(made['scenes'])}, as chapters/mission_{made['mission']}.toml (draft).")
+        for text in made["threads"]:
+            print(f"- comes back: {text}")
+        if not made["threads"]:
+            print("- nothing the hero did is still open, so nothing was rolled to come back: read solo history anyway")
+        print(f"Write it up from what the hero did (solo -C {made['campaign']} history), then solo campaign check {made['dir']}.")
+    elif args.action == "roll":
+        if not args.target or not args.what:
+            raise SoloError('solo campaign roll <adventure> <table | meaning | dice> --for "what it decides"')
+        record = generate.roll(library.find_adventure(args.target), " ".join(args.what), args.purpose)
+        print(f"#{record['n']} {record['table']} ({record['dice']}): {record['result']}")
+        print(f'cite it where it is used: source = "rolled: #{record["n"]}"')
+    else:
+        if not args.target:
+            raise SoloError("which adventure? solo campaign check <adventure>")
+        report = generate.check(library.find_adventure(args.target))
+        for line in report["notes"]:
+            print(line)
+        if report["problems"]:
+            raise SoloError(f"{len(report['problems'])} thing(s) before it can be played:\n  " + "\n  ".join(report["problems"]))
+        print("ok: written, every roll used or explained")
 
 
 def cmd_inventory(args):
@@ -1597,6 +1641,18 @@ def _parser():
     sub.add_argument("--name", help="the table's name (default: from the file name)")
     sub.add_argument("--formula", help="the dice, when neither the header nor the ranges say (1d6, 2d6, d66, 1d100)")
     sub.add_argument("--pages", help="the book's pages it is on, for its source line: 45 or 45-46")
+
+    sub = command("campaign", cmd_campaign, "a campaign from a premise: new <id> --premise ..., next [campaign folder], roll <adventure> <what> --for ..., check <adventure>")
+    sub.add_argument("action", choices=["new", "next", "roll", "check"])
+    sub.add_argument("target", nargs="?", help="new: the adventure's id or folder; next: the campaign folder (default: this one); roll, check: the adventure")
+    sub.add_argument("what", nargs="*", help="roll: a table of the packs, meaning, or dice (2d6)")
+    sub.add_argument("--premise", help="new: what the campaign is about, in a sentence")
+    sub.add_argument("--tone", help="new: grim, hopeful, weird ...")
+    sub.add_argument("--missions", type=int, default=3, help="new: how many missions (default 3)")
+    sub.add_argument("--system", help="new: the system pack (default: dragonbane)")
+    sub.add_argument("--title", help="new: the campaign's title (default: from its hub)")
+    sub.add_argument("--seed", type=int, help="new: the dice's seed, to roll the same campaign again")
+    sub.add_argument("--for", dest="purpose", help="roll: what the roll decides")
 
     sub = command("inventory", cmd_inventory, "start a book's inventory from solo extract's folder: a file per chapter, an item per section and table")
     sub.add_argument("pack", help="the pack folder the inventory is for (created if missing)")

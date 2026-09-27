@@ -1,0 +1,39 @@
+about = "A generated campaign's first mission, as rolled: no agent has written it up, so the GM runs the dice's terse prompts. Checks the GM briefs the mission from the hub's text, sets the mission's threat when the hero sets out, moves along the waypoints, runs what each rolled (a roll, a person, a fight), and closes the mission with its exact commit. The GM should turn the rolled words into story, never read them out."
+adventure = "generated-salt"
+character = "ragna"
+max_turns = 12
+
+[generate]
+premise = "a smuggler's coast where the dead keep the lighthouses"
+tone = "grim"
+missions = 3
+seed = 11
+
+[player]
+mode = "agent"
+goal = "Take the mission you're offered at home, see it through to its end, and come back alive."
+persona = "Bold but not reckless, plays in character, follows leads the GM offers."
+
+[[expect]]
+when = "visited.m1_w1"
+why = "the GM sends the hero out on the mission"
+by_turn = 4
+
+[[expect]]
+event = "threat"
+why = "the mission's threat is set when the hero sets out, as the briefing says"
+by_turn = 5
+
+[[expect]]
+when = "visited.m1_heart"
+why = "the hero reaches the heart of the mission"
+
+[[expect]]
+when = "fact.mission_1.done"
+why = "the mission is closed with its exact commit"
+
+[[forbid]]
+text = "rolled, not yet written"
+
+[[forbid]]
+text = "\\bRolled:"

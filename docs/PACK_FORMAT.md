@@ -93,6 +93,7 @@ Top level: `attributes` (dice per attribute), `attribute_range`, `key_swap`, `tr
 
 ```
 adventure.toml   everything below that isn't text
+chapters/<id>.toml  more scenes, clocks, factions and weapons, laid on in order (below)
 scenes/<id>.md   read-aloud first, GM-only text inside ::: gm fences
 npcs/<id>.toml   profiles (npcs/<id>.json from an importer)
 tables/<id>.toml
@@ -107,6 +108,7 @@ scenes.json      from an importer: titles, exits, npcs, tables
 | Key | Meaning |
 |---|---|
 | `title`, `system`, `summary` (player-safe), `start`, `source` | The card on the New adventure screen, and where it comes from |
+| `draft` | `true` while it's still being written: the New adventure screen leaves it out (and says so) and `solo new` refuses it |
 | `chaos`, `scene_checks` | The likelihood oracle's settings (ignored by a system with a fortune chart) |
 | `move_time` | Game time every move takes unless its exit says otherwise |
 | `[weapons.<id>]` | Weapons the adventure brings; they join the system's |
@@ -116,6 +118,19 @@ scenes.json      from an importer: titles, exits, npcs, tables
 | `exits` | `target = "Label"`, or `[scenes.<id>.exits.<target>]` with `label`, `when` (closed until it holds), `time` |
 | `[[scenes.<id>.voices]]` | `skill`, `text`, `clue`, `when`, `boons`, `banes` |
 | `[[scenes.<id>.branches]]` | `when`, `text` (shown to the GM under "True now") |
+
+### Chapters: `chapters/<id>.toml`
+
+An adventure can come in parts. Each chapter file holds `scenes`, `clocks`, `factions` and `weapons` in the same shape as `adventure.toml`, and they are laid over it in natural order (`mission_2` before `mission_10`). A chapter can add to a scene defined before it: its `exits` join the scene's, and its `branches` and `voices` are added after the scene's own, so a new mission gives the hub its way in and its briefing without anyone editing the hub. Any other key of a scene set again replaces it. A clock, faction or weapon defined in two files is a problem (`solo validate` names both), and so is any other top-level key in a chapter. `draft = true` in a chapter keeps it out of a campaign under way until the line comes off; `solo validate --adventure` and `solo outline` show drafts to their author. A generated campaign keeps each mission in `chapters/mission_<n>.toml`.
+
+### Generated campaigns: `premise.toml` and `rolls.toml`
+
+`solo campaign new` (`make campaign`) writes both beside `adventure.toml`, and `solo campaign check` reads them:
+
+- `premise.toml`: what the player pitched: `title`, `premise`, `tone`, `missions`, `system`, `seed`. The generator reads it again for each mission.
+- `rolls.toml`: every roll made for the pack, in order, as `[[rolls]]` with `n`, `for` (what it decided), `table`, `dice`, `rolled` (the dice) and `result`. The generator and `solo campaign roll` append to it; nothing else writes it. A roll the author chose not to use gets `note = "why"`.
+
+What a roll decided cites it anywhere in the pack's files, most often in a `source`: `source = "rolled: #4, #7"`. The check fails on a roll nothing cites and nothing explains, on a citation of a roll that isn't there, on a file still marked `rolled, not yet written`, and on `draft` marks.
 
 ### NPCs: `npcs/<id>.toml`
 

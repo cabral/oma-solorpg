@@ -13,6 +13,7 @@ Only The Red Tusk Hall ships here. Everything else below was imported from books
 | A solo rules booklet | `[oracle]`, `[effects]`, `[threats]`, `[search]`, `[scavenge]`, `[npcs]`, `[abilities]`, `tend`, `self_rally`, `self_save`: a chart oracle, inspiration words, dragon/demon effects, threats, search and scavenge, simple NPCs with attacker roles, abilities for a lone hero, healing alone, ferocity as initiative cards |
 | A solo campaign of missions from a hub | Missions in order, generated waypoints, adventure weapons, `defend resist`, safe scenes, kinds of foes |
 | A deck of treasure cards | Dice multipliers (`2d6x10`) and self-resolving table results (`roll`, `choices`, `then`, `again`) |
+| A campaign generated from a premise (no book) | Adventures in chapters, draft packs and chapters, rolls recorded and cited (`rolls.toml`, `solo campaign check`), people made up in play written into the pack without changing the campaign's replay |
 | A core rulebook | Packs laid over packs, `gear.toml`, `bestiary/`, rules pages found by `Search:` words, running heads kept to the page edges, soft hyphens in the audit's page check, a guard against inventorying the extract itself |
 
 ## The process

@@ -550,7 +550,7 @@ make check-adventure ID=my-adventure</code></pre>
       <p>When no book holds the story you want, pitch one. Give your agent a premise, a tone and a length, and it writes the campaign as a pack: a hub to come back to, missions as paths of waypoints, factions that want things, clocks and threats, people with faces, voices and secrets.</p>
       <pre class="cmd-block"><code>make campaign ID=salt-and-ash TONE=grim MISSIONS=4 \
   PREMISE="a smuggler's coast where the dead keep the lighthouses"</code></pre>
-      <p>Your system's own tables and the oracle roll the parts, so the dice have a say before you start. Missions after the first are written from what your hero actually did: the consequences they left open, the people who remember them. Then <code>solo validate</code> and <code>solo outline</code> check it like any imported adventure, and it waits on the New adventure screen.</p>
+      <p>Your system's own tables and the oracle roll the parts, so the dice have a say before you start. Missions after the first are written from what your hero actually did: the consequences they left open, the people who remember them. Then <code>solo validate</code>, <code>solo outline</code> and <code>solo campaign check</code> check it like any imported adventure, every roll used or explained, and it waits on the New adventure screen.</p>
     </article>
 
     <article class="win heir-win">
@@ -597,7 +597,7 @@ make check</code></pre>
       <div class="win-head"><span class="win-title">roadmap</span><a class="dim" href="https://github.com/cabral/oma-solorpg/blob/main/ROADMAP.md">ROADMAP.md</a></div>
       <ul class="road">
         <li><span class="tag">next</span> The mechanics your book has and the engine doesn't yet: spells and willpower, weapons that break on a parry, ranged attacks and their ranges, monster traits, encumbrance, journeys rolled by the engine.</li>
-        <li><span class="tag">next</span> Campaign generation from a premise, missions written from what your hero did.</li>
+        <li><span class="tag">new</span> Campaign generation from a premise (<code>make campaign</code>), missions written from what your hero did.</li>
         <li><span class="tag">later</span> A third mechanics family, percentile or d20-over, beside Dragonbane's d20-under and the dice pool.</li>
         <li><span class="tag">later</span> More games on the dice-pool family, more agents that stream into the Book, the importer on the Table.</li>
       </ul>

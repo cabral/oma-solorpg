@@ -121,7 +121,7 @@ Your adventures, your packs and your campaigns live in `~/Games/solo` (set `SOLO
 
 ```
 ~/Games/solo/systems/<id>/      rules packs built from books you own (make rules)
-~/Games/solo/adventures/<id>/   adventures you imported; they show up on the New adventure screen
+~/Games/solo/adventures/<id>/   adventures you imported or generated; they show up on the New adventure screen
 ~/Games/solo/sources/<id>/      your books as text, page by page (solo extract)
 ~/Games/solo/campaigns/<id>/    created by New adventure or solo new
 ```
@@ -136,6 +136,18 @@ make check-adventure ID=my-adventure
 
 From a PDF, `make adventure` extracts the book, starts the pack's inventory and opens your agent with the `solo-import` skill; from Foundry it imports the journals, actors and tables first and asks the agent to add what the text only implies: factions, clocks, gates, branches, NPC profiles and voices. `make check-adventure` validates the pack, prints its outline (spoilers) and audits it against the book. The skill also says how to turn a published adventure's table rules (timers, replacement characters, scoring) into solo ones.
 
+A campaign nobody has written yet, from a premise you pitch:
+
+```bash
+make campaign ID=salt-and-ash TONE=grim MISSIONS=4 \
+  PREMISE="a smuggler's coast where the dead keep the lighthouses"
+make campaign-next CAMPAIGN=~/Games/solo/campaigns/salt-and-ash-ragna   # after each mission
+```
+
+`make campaign` rolls the campaign's bones first: a hub to come back to (a safe place), the people who oppose you and a hidden clock for their plan, with omens, and the first mission as a path of three waypoints to its heart. The dice decide what each waypoint holds (a way to get through, someone on the road, a fight, a find, a place that fights back, signs of the enemy), who is there and what they want, from your system pack's own tables where it has them: the solo rules' threats, the treasure deck, the simple NPCs and the bestiary, the inspiration words. Every roll goes into the pack's `rolls.toml`, and what it decided cites it. Then your agent writes the campaign up with the `solo-campaign` skill, keeping to what the dice said, and `make check-adventure ID=salt-and-ash` checks it: it validates, and every roll is used or explained. Until then it's a draft and stays off the New adventure screen.
+
+Missions after the first are written as you play. Once a session closes a mission, `make campaign-next` rolls the next one into the same pack, and rolls which of the things your hero did come back in it: a consequence left open, a promise, someone who remembers you, someone who got away, what word reached a faction. Someone the GM made up in play gets a file of their own, with the name and face you met. The new mission reaches your campaign when the agent has written it; until then the hub tells the GM the next chapter is on its way.
+
 Everything `make` runs is a `solo` command you can run yourself, one step at a time:
 
 ```bash
@@ -147,6 +159,10 @@ solo import foundry adventure <export> --out ~/Games/solo/adventures/my-adventur
 solo import foundry character <character.json> --out ~/Games/solo/ragna.json
 solo validate --adventure my-adventure
 solo outline --adventure my-adventure
+solo campaign new salt-and-ash --premise "..." --tone grim --missions 4 [--seed 7]
+solo campaign roll salt-and-ash treasure --for "what the keeper hides"
+solo campaign check salt-and-ash
+solo campaign next ~/Games/solo/campaigns/salt-and-ash-ragna
 ```
 
 How a book becomes a pack, what the formats hold, and what went wrong on earlier imports: [docs/INGESTION.md](docs/INGESTION.md) and [docs/PACK_FORMAT.md](docs/PACK_FORMAT.md). The design is in [docs/PLAN.md](docs/PLAN.md), and what comes next in [ROADMAP.md](ROADMAP.md).
@@ -176,6 +192,7 @@ Don't publish packs built from books you bought. They stay in `~/Games/solo`, wh
 | `solo state` / `log` / `rebuild` / `validate` / `outline` | inspection, repair and review |
 | `solo new [<adventure>]` / `character` / `library` / `use` / `play [--terminal]` | campaigns and heroes |
 | `solo setup` / `import` / `extract <pdf>` / `inventory` / `audit` | installation and content: a book's PDF as text, a first inventory, a table from the book, a pack checked against its inventory and its pages |
+| `solo campaign new\|next\|roll\|check` | a campaign from a premise: roll it, roll its next mission from what the hero did, roll for its author, check it's written and every roll is used |
 
 ## Development
 

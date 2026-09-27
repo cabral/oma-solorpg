@@ -28,7 +28,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
 
-from solo import campaign, cli, creation, gm, library, packs  # noqa: E402
+from solo import campaign, cli, creation, generate, gm, library, packs  # noqa: E402
 
 SCENARIOS = Path(__file__).resolve().parent / "scenarios"
 NESTING = gm.NESTING
@@ -327,6 +327,8 @@ def link_own_packs(own, home):
 
 
 def start(scenario, root):
+    if scenario.get("generate"):
+        roll_campaign(scenario)
     adventure_path = library.find_adventure(scenario["adventure"])
     adventure = packs.load_adventure(adventure_path)
     system_path = library.find_system(scenario.get("system") or adventure["system"])
@@ -340,6 +342,23 @@ def start(scenario, root):
         if cli.main(["-C", str(root), *command]) != 0:
             raise RuntimeError(f"setup failed: solo {' '.join(command)}")
     return root
+
+
+def roll_campaign(scenario):
+    """A scenario can play a generated campaign: `[generate]` (premise, tone, missions, seed)
+    rolls it into the run's home under the scenario's adventure id, as `make campaign` does,
+    and publishes it as rolled, without an agent's write-up: the GM runs the rolled prompts,
+    the hardest case. The same seed rolls the same campaign every run."""
+    spec = scenario["generate"]
+    system = spec.get("system", "dragonbane")
+    pack = library.home() / "adventures" / scenario["adventure"]
+    if not (pack / generate.PREMISE).exists():
+        generate.new(pack, library.find_system(system), spec["premise"], tone=spec.get("tone", ""),
+                     missions=spec.get("missions", 3), seed=spec.get("seed", 1), system_name=system)
+        for path in [pack / "adventure.toml", *sorted((pack / "chapters").glob("*.toml"))]:
+            path.write_text("".join(line for line in path.read_text(encoding="utf-8").splitlines(keepends=True)
+                                    if line.strip() != "draft = true"), encoding="utf-8")
+    return pack
 
 
 def summarize(scenario, c, turns, reached):

@@ -25,7 +25,6 @@ The faces in `art.js` come from `solo/portrait.py` and `packs/dragonbane/art.tom
 
 ## Before publishing
 
-- The page presents campaign generation (`make campaign`), which is roadmap item 2 and not built yet.
 - `og:url` and `og:image` in `index.html` assume `https://cabral.github.io/oma-solorpg/`. Change both for another address.
 - The shelf section shows Free League's adventures by name, with screenshots of play. It credits them and says the packs stay private; check it against the license's terms before it goes out.
 

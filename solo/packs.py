@@ -178,19 +178,51 @@ def price(text, money):
 _PRICE = re.compile(r"(\d+)\s*([a-z]+)")
 
 
-def load_adventure(path):
+# What a chapter file (chapters/<id>.toml) may hold: the parts of adventure.toml that grow
+# with the story. The title, the start and the rest stay in adventure.toml.
+CHAPTER_KEYS = ("scenes", "clocks", "factions", "weapons")
+
+
+def load_adventure(path, drafts=True):
+    """An adventure pack: adventure.toml over an importer's scenes.json, then each chapter
+    file in chapters/ in order (chapter_2 before chapter_10). A chapter adds scenes, clocks,
+    factions and weapons, and can add to a scene defined before it (the hub's way into the
+    new mission, its briefing), so a campaign that grows a mission at a time never has to
+    rewrite what was written before. An id defined twice is a problem, never a silent
+    override: `conflicts` lists them for `validate`.
+
+    A chapter marked `draft = true` is still being written: its author sees it (the default),
+    a campaign plays on without it (drafts=False) until the mark comes off."""
     root = Path(path)
     spec = _optional(root / "adventure.toml")
     scenes = {sid: dict(scene) for sid, scene in _optional(root / "scenes.json").items()}
-    for sid, extra in spec.get("scenes", {}).items():
-        scene = scenes.setdefault(sid, {})
-        for key, value in extra.items():
-            if key == "exits":
-                scene["exits"] = {**scene.get("exits", {}), **value}
-            elif key in ("npcs", "tables"):
-                scene[key] = list(dict.fromkeys(scene.get(key, []) + list(value)))
-            else:
-                scene[key] = value
+    sections = {key: dict(spec.get(key, {})) for key in CHAPTER_KEYS if key != "scenes"}
+    defined = {key: dict.fromkeys(sections[key], "adventure.toml") for key in sections}
+    conflicts, chapters = [], []
+    for part, name in [(spec, "adventure.toml"), *_chapters(root)]:
+        if name != "adventure.toml":
+            if part.get("draft") and not drafts:
+                continue
+            chapters.append(Path(name).stem)
+            conflicts += [f"{name}: a chapter holds only {', '.join(CHAPTER_KEYS)} and draft ({key} goes in adventure.toml)"
+                          for key in part if key not in (*CHAPTER_KEYS, "draft")]
+            for key in sections:
+                for item_id, value in part.get(key, {}).items():
+                    if item_id in defined[key]:
+                        conflicts.append(f"{name}: {key[:-1]} {item_id} is already defined in {defined[key][item_id]}")
+                    else:
+                        sections[key][item_id], defined[key][item_id] = value, name
+        for sid, extra in part.get("scenes", {}).items():
+            scene = scenes.setdefault(sid, {})
+            for key, value in extra.items():
+                if key == "exits":
+                    scene["exits"] = {**scene.get("exits", {}), **value}
+                elif key in ("npcs", "tables"):
+                    scene[key] = list(dict.fromkeys(scene.get(key, []) + list(value)))
+                elif key in ("branches", "voices"):
+                    scene[key] = scene.get(key, []) + list(value)
+                else:
+                    scene[key] = value
     if scenes:
         return {
             "dir": root,
@@ -198,15 +230,20 @@ def load_adventure(path):
             "system": spec.get("system"),
             "summary": spec.get("summary", ""),
             "start": spec.get("start") or next(iter(scenes)),
-            "factions": spec.get("factions", {}),
-            "clocks": spec.get("clocks", {}),
+            "factions": sections["factions"],
+            "clocks": sections["clocks"],
+            # Still being written (make campaign): the New adventure screen leaves it out.
+            "draft": bool(spec.get("draft")),
+            # chapters/*.toml, in the order they were laid on, and ids they defined twice.
+            "chapters": chapters,
+            "conflicts": conflicts,
             # The oracle's chaos factor to start at, and whether entering a scene rolls a scene check.
             "chaos": spec.get("chaos", 5),
             "scene_checks": spec.get("scene_checks", True),
             # Game time an ordinary move takes, unless the exit says otherwise: { stretch = 1 }.
             "move_time": spec.get("move_time", {}),
             # Weapons the adventure brings (a named blade, a relic): they join the system's.
-            "weapons": spec.get("weapons", {}),
+            "weapons": sections["weapons"],
             "characters": _load_folder(root / "characters"),
             "scenes": scenes,
             "npcs": _load_folder(root / "npcs"),
@@ -215,6 +252,12 @@ def load_adventure(path):
         }
     else:
         raise SoloError(f"{root} has no scenes: expected scenes.json or [scenes.<id>] in adventure.toml")
+
+
+def _chapters(root):
+    """chapters/*.toml as (data, name), in natural order: chapter_2 before chapter_10."""
+    order = lambda p: [int(part) if part.isdigit() else part for part in re.split(r"(\d+)", p.stem)]  # noqa: E731
+    return [(load_data(p), f"chapters/{p.name}") for p in sorted((root / "chapters").glob("*.toml"), key=order)]
 
 
 def flat_facts(facts, prefix=""):
@@ -767,8 +810,9 @@ def _validate_dice(label, expr):
 
 
 def _validate_adventure(system, adventure):
-    problems = [f"npc {nid}: monster {npc['monster']} isn't in the system's bestiary ({', '.join(system.get('bestiary', {})) or 'it has none'})"
-                for nid, npc in adventure["npcs"].items() if npc.get("monster") and npc["monster"] not in system.get("bestiary", {})]
+    problems = list(adventure.get("conflicts", []))
+    problems += [f"npc {nid}: monster {npc['monster']} isn't in the system's bestiary ({', '.join(system.get('bestiary', {})) or 'it has none'})"
+                 for nid, npc in adventure["npcs"].items() if npc.get("monster") and npc["monster"] not in system.get("bestiary", {})]
     adventure = with_system(system, adventure)
     scenes, npcs, factions, clocks = (adventure[k] for k in ("scenes", "npcs", "factions", "clocks"))
     tables = {**system["tables"], **adventure["tables"]}
@@ -1079,7 +1123,8 @@ def outline(adventure):
     lines = [f"# {adventure['title']}: outline (spoilers)", "",
              f"{len(scenes)} scenes, {len(adventure['npcs'])} npcs, {len(clocks)} clocks, {len(adventure['tables'])} tables. "
              f"Starts at {adventure['start']}; chaos {adventure['chaos']}"
-             + (f"; every move takes {spent_text(adventure['move_time'])}" if adventure["move_time"] else "") + ".", "", "## Scenes", ""]
+             + (f"; every move takes {spent_text(adventure['move_time'])}" if adventure["move_time"] else "") + "."
+             + (f" Chapters: {', '.join(adventure['chapters'])}." if adventure.get("chapters") else ""), "", "## Scenes", ""]
     for sid, scene in scenes.items():
         flags = [f for f in ("climax", "ending", "dark", "safe") if scene.get(f)]
         lines.append(f"### {sid}: {scene.get('title', sid)}" + (f" ({', '.join(flags)})" if flags else "") + src(scene))
