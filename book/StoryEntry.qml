@@ -31,6 +31,11 @@ Item {
     return outcome.success ? "success" : "failure"
   }
 
+  // Dice fixed by SOLO_SEED (tests, demos) are marked, so a seeded roll never reads as a free one.
+  function seeded() {
+    return beat.seed !== undefined ? "seeded " + beat.seed : ""
+  }
+
   function verdictColor(outcome) {
     if (!outcome) return theme.text
     if (outcome.dragon) return theme.gold
@@ -108,7 +113,8 @@ Item {
                  entry.beat.boons ? entry.beat.boons + (entry.beat.boons === 1 ? " boon" : " boons") : "",
                  entry.beat.banes ? entry.beat.banes + (entry.beat.banes === 1 ? " bane" : " banes") : "",
                  entry.beat.outcome && entry.beat.outcome.rolls && entry.beat.outcome.rolls.length > 1 ? "rolled " + entry.beat.outcome.rolls.join(" and ") : "",
-                 entry.beat.outcome && entry.beat.outcome.groups ? entry.beat.outcome.groups.map(g => g.name + " " + (g.rolls.join(" ") || "-")).join("  ") : ""]
+                 entry.beat.outcome && entry.beat.outcome.groups ? entry.beat.outcome.groups.map(g => g.name + " " + (g.rolls.join(" ") || "-")).join("  ") : "",
+                 entry.seeded()]
             .filter(t => t !== "").join(" · ")
         }
       }
@@ -138,6 +144,7 @@ Item {
           color: entry.theme.accent
           text: (entry.beat.label || "").toUpperCase() + "  [" + (entry.beat.outcome ? entry.beat.outcome.target : "") + "]  "
             + (entry.beat.outcome && entry.beat.outcome.dragon ? "DRAGON" : "SUCCESS")
+            + (entry.seeded() ? "  " + entry.seeded().toUpperCase() : "")
         }
         Text {
           width: parent.width
@@ -164,7 +171,7 @@ Item {
       font.italic: true
       font.pixelSize: entry.theme.prose * 0.95
       color: entry.theme.dim
-      text: "~  " + (entry.beat.text || "").replace(/^[^:]*\(\d+\):\s*/, "") + "  ~"
+      text: "~  " + (entry.beat.text || "").replace(/^[^:]*\(\d+\):\s*/, "") + "  ~" + (entry.seeded() ? "  (" + entry.seeded() + ")" : "")
       opacity: 0
       Component.onCompleted: fade.start()
       NumberAnimation on opacity { id: fade; running: false; to: 1; duration: 2400; easing.type: Easing.InQuad }
@@ -236,7 +243,7 @@ Item {
       font.family: entry.theme.mono
       font.pixelSize: entry.theme.small
       color: entry.kind === "hurt" ? entry.theme.urgent : entry.kind === "hit" ? entry.theme.accent : entry.theme.dim
-      text: (entry.kind === "hurt" ? "→ " : entry.kind === "hit" ? "⚔ " : "← ") + (entry.beat.text || "")
+      text: (entry.kind === "hurt" ? "→ " : entry.kind === "hit" ? "⚔ " : "← ") + (entry.beat.text || "") + (entry.seeded() ? " · " + entry.seeded() : "")
     }
   }
 
@@ -248,7 +255,7 @@ Item {
       font.family: entry.theme.mono
       font.pixelSize: entry.theme.small
       color: entry.theme.text
-      text: "☉ " + (entry.beat.text || "")
+      text: "☉ " + (entry.beat.text || "") + (entry.seeded() ? " · " + entry.seeded() : "")
     }
   }
 
@@ -260,7 +267,7 @@ Item {
       font.family: entry.theme.mono
       font.pixelSize: entry.theme.small
       color: entry.theme.dim
-      text: "· " + (entry.beat.text || "")
+      text: "· " + (entry.beat.text || "") + (entry.seeded() ? " · " + entry.seeded() : "")
     }
   }
 

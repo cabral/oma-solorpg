@@ -10,6 +10,7 @@ Terms joined by + or -:
   K          a constant                                 1d6+2
 """
 
+import os
 import random
 import re
 
@@ -59,6 +60,19 @@ def parse(expr):
     if not terms:
         raise SoloError("empty dice expression")
     return terms
+
+
+def fixed_seed():
+    """SOLO_SEED, when set, fixes the dice so a roll repeats (tests, demos). Every event
+    written under it records the seed (Campaign.append): a roll whose seed was tried
+    somewhere else first can't pass for an honest one."""
+    seed = os.environ.get("SOLO_SEED")
+    if not seed:
+        return None
+    try:
+        return int(seed)
+    except ValueError:
+        raise SoloError(f"SOLO_SEED must be a whole number, not {seed!r}") from None
 
 
 def die(sides, rng=None):

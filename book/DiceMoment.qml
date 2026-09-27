@@ -167,7 +167,8 @@ Item {
         font.pixelSize: moment.theme.small
         font.letterSpacing: 3
         color: moment.theme.dim
-        text: moment.beat ? ((moment.beat.death ? "DEATH ROLL · " : moment.beat.pushed ? "PUSHED · " : "") + (moment.beat.label || "").toUpperCase()) : ""
+        text: moment.beat ? ((moment.beat.death ? "DEATH ROLL · " : moment.beat.pushed ? "PUSHED · " : "") + (moment.beat.label || "").toUpperCase()
+                             + (moment.beat.seed !== undefined ? " · SEEDED " + moment.beat.seed : "")) : ""
       }
 
       Item {

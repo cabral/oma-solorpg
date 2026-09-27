@@ -262,6 +262,11 @@ class Campaign:
             "type": event_type,
             **{k: v for k, v in data.items() if v is not None},
         }
+        # Dice fixed by SOLO_SEED say so in the log (and the Book shows it): otherwise a GM
+        # could try seeds on a copy of the campaign and roll the one that lands well here.
+        seed = dice.fixed_seed()
+        if seed is not None:
+            event["seed"] = seed
         # Applied before it is written: an event the state can't take is refused, never left
         # in the log for every later replay to trip over.
         apply(self.state, event, self.adventure)
@@ -2513,6 +2518,8 @@ def _story_entry(state, event, entry):
             story["purpose"] = event["defend"]["how"]
     elif kind in ("damage", "wound", "harm"):
         story.update(dealt=event["dealt"], down=event.get("down", False))
+    if "seed" in event:
+        story["seed"] = event["seed"]
     return {"seq": event["seq"], **story}
 
 

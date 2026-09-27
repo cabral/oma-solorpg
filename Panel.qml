@@ -523,12 +523,14 @@ Item {
     var check = root.lastCheck
     var mods = check ? [check.boons ? check.boons + (check.boons === 1 ? " boon" : " boons") : "",
                         check.banes ? check.banes + (check.banes === 1 ? " bane" : " banes") : ""].filter(m => m !== "") : []
+    // Dice fixed by SOLO_SEED (tests, demos) say so, here as in the Book.
+    var seeded = check && check.seed !== undefined ? " · seeded " + check.seed : ""
     if (!check) {
       return ""
     } else if (check.outcome.rolls) {
-      return "dice " + check.outcome.rolls.join(", ") + (mods.length ? " (" + mods.join(", ") + ")" : "")
+      return "dice " + check.outcome.rolls.join(", ") + (mods.length ? " (" + mods.join(", ") + ")" : "") + seeded
     } else {
-      return check.outcome.groups.map(g => g.name + " " + (g.rolls.join(" ") || "none")).join(" · ")
+      return check.outcome.groups.map(g => g.name + " " + (g.rolls.join(" ") || "none")).join(" · ") + seeded
     }
   }
 
