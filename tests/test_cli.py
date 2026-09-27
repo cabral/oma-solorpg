@@ -173,6 +173,29 @@ class CliTest(CliCase):
         self.assertIn("## Secrets (GM only)", out)
         self.assertIn("[reveal when npc.orc_leader.attitude >= friendly]", out)
 
+    def test_a_seeded_roll_says_so_in_the_log_and_the_book(self):
+        # A GM could try seeds on a copy of the campaign and roll the one that lands well:
+        # every event written under SOLO_SEED carries it, and the Book's beat shows it.
+        self.new_game()
+        code, out, _ = self.solo("-C", self.game, "check", "sneaking")
+        self.assertEqual((code, json.loads(out)["event"]["seed"]), (0, 5))
+        with campaign.session(self.game) as c:
+            beat = [b for b in c.state["story"] if b["kind"] == "roll"][-1]
+            opened = len(c.events)
+        self.assertEqual(beat["seed"], 5)
+        with unittest.mock.patch.dict(os.environ):
+            del os.environ["SOLO_SEED"]
+            code, out, _ = self.solo("-C", self.game, "check", "sneaking")
+            self.assertEqual(code, 0)
+            self.assertNotIn("seed", json.loads(out)["event"])
+            with campaign.session(self.game) as c:
+                self.assertFalse(any("seed" in e for e in c.events[opened:]))
+                self.assertNotIn("seed", [b for b in c.state["story"] if b["kind"] == "roll"][-1])
+            os.environ["SOLO_SEED"] = "lucky"
+            code, _, err = self.solo("-C", self.game, "check", "sneaking")
+        self.assertEqual(code, 1)
+        self.assertIn("SOLO_SEED must be a whole number", err)
+
     def test_fights_and_the_oracle_through_the_cli(self):
         code, _, err = self.solo("new", str(RED_TUSK), "--dir", self.game, "--character", str(RAGNA), "--line", "spiders")
         self.assertEqual(code, 0, err)

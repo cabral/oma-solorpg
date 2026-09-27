@@ -13,7 +13,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from . import SoloError, audit, booktables, campaign, creation, desk, extract, foundry, generate, gm, library, oracle, packs
+from . import SoloError, audit, booktables, campaign, creation, desk, dice, extract, foundry, generate, gm, library, oracle, packs
 from .library import REPO
 from .packs import ATTITUDES
 
@@ -1453,9 +1453,10 @@ def _open(args):
 
 
 def _rng():
-    """SOLO_SEED makes rolls repeatable (tests, demos); otherwise dice use the system RNG."""
-    seed = os.environ.get("SOLO_SEED")
-    return random.Random(int(seed)) if seed else None
+    """SOLO_SEED makes rolls repeatable (tests, demos); otherwise dice use the system RNG.
+    Events written under it carry the seed, so the log and the Book show it."""
+    seed = dice.fixed_seed()
+    return random.Random(seed) if seed is not None else None
 
 
 def _prefs_arguments(sub):
