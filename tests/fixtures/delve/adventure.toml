@@ -1,0 +1,32 @@
+# A small original adventure for the tests of long campaigns: a safe village where threats
+# wait, a mine where they loom, a kind of foe the hero meets again and again, and someone
+# freed in the deep who is found again at home.
+title = "The Old Mine"
+system = "dragonbane"
+summary = "Goblins have taken the old mine above Hollowfell, and a miner with it."
+start = "village"
+chaos = 3
+scene_checks = false
+
+[factions.miners]
+name = "The miners of Hollowfell"
+standing = 0
+
+[scenes.village]
+title = "Hollowfell"
+safe = true                 # threats wait here: they loom in the mine
+exits = { adit = "Up to the mine", smithy = "The smithy" }
+
+[scenes.smithy]
+title = "Brenna's Smithy"
+npcs = ["brenna"]
+exits = { village = "Back into the lane" }
+
+[scenes.adit]
+title = "The Adit"
+exits = { village = "Down to the village", deep = "Into the deep workings" }
+
+[scenes.deep]
+title = "The Deep Workings"
+npcs = ["tunnel_goblin"]
+exits = { adit = "Back up the adit" }

@@ -1,0 +1,10 @@
+# Test data: an attack table in columns, one per attacker role. An `attack` rolls the
+# NPC's skill; an `effect` is for the GM to run.
+name = "NPC attacks"
+formula = "1d6"
+results = [
+  { range = [1, 3], melee = { text = "Swing! The NPC attacks up close.", attack = true }, ranged = { text = "Loose! The NPC shoots at you.", attack = true }, sneaky = { text = "Jab! The NPC strikes with whatever is in hand.", attack = true }, magic = { text = "Spark! The NPC hurls a bolt for 2D6.", attack = true, damage = "2d6" } },
+  { range = [4, 4], melee = { text = "Guard up! The NPC waits for your move.", effect = true }, ranged = { text = "Take aim! The NPC readies a shot for next turn.", effect = true }, sneaky = { text = "Slip away! The NPC changes weapon or distance.", effect = true }, magic = { text = "Burst! The NPC blasts everything nearby for 3D6.", attack = true, damage = "3d6" } },
+  { range = [5, 5], melee = { text = "Charge! The NPC attacks with a boon for an extra D6.", attack = true, boons = 1, extra = "1d6" }, ranged = { text = "Two arrows! The NPC shoots twice, each with a bane.", attack = true, banes = 1, times = 2 }, sneaky = { text = "Feint! The NPC tricks you: an INT roll or the next blow lands.", effect = true }, magic = { text = "Ward! The NPC raises a shield of force.", effect = true } },
+  { range = [6, 6], melee = { text = "War cry! The NPC howls: make a WIL roll or be scared.", effect = true }, ranged = { text = "Aimed shot! The NPC shoots with a bane for an extra 2D6.", attack = true, banes = 1, extra = "2d6" }, sneaky = { text = "Vanish! The NPC hides; an AWARENESS roll finds them.", effect = true }, magic = { text = "Strange working! Roll on the inspiration tables and read the spell.", effect = true } },
+]

@@ -1,0 +1,35 @@
+# A pre-made Dragonbane hero, offered on the New adventure screen. `solo import foundry
+# character` writes the same shape as JSON from a Foundry actor; unlisted skills are untrained.
+name = "Ragna"
+conditions = []
+items = ["broadsword", "shield", "torch", "rope", "4 field rations", "6 silver"]
+# Veteran from the profession; Army of One, the solo rules' extra heroic ability for a hero alone.
+abilities = ["Unforgiving", "Veteran", "Army of One"]
+
+[info]
+kin = "Dwarf"
+profession = "Fighter"
+age = "Adult"
+
+[attributes]
+str = 15
+con = 14
+agl = 10
+int = 9
+wil = 11
+cha = 8
+
+[skills]
+awareness = 10
+evade = 10
+persuasion = 8
+swords = 14
+
+[tracks]
+hp = 14
+wp = 11
+
+[ratings]
+Movement = 8
+"Damage bonus (STR)" = "+D4"
+"Damage bonus (AGL)" = "none"

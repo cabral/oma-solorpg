@@ -1,0 +1,24 @@
+# The villain of the Red Tusk Hall. Hand-written: stats, an attack, and a profile.
+name = "The hooded priest"
+role = "Priest of the Deep Mother"
+attitude = "hostile"
+wants = "To finish the ritual and wake the Deep Mother's spawn."
+fears = "Being interrupted before the last verse."
+voice = "Whispers, then shouts the verses of the ritual."
+
+[stats]
+hp = 14
+armor = 1
+
+[skills]
+knives = 13
+evade = 10
+
+[attack]
+label = "Curved knife"
+skill = "knives"
+damage = "1d8"
+
+[[secrets]]
+id = "the_verse"
+text = "If the priest dies before the clock fills, the ritual fails and the pool goes still."

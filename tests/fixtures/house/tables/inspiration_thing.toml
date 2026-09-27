@@ -1,0 +1,25 @@
+# Test data.
+name = "Inspiration: thing"
+formula = "1d20"
+results = [
+  { range = [1, 1], text = "Anchor" },
+  { range = [2, 2], text = "Bell" },
+  { range = [3, 3], text = "Bridge" },
+  { range = [4, 4], text = "Candle" },
+  { range = [5, 5], text = "Crown" },
+  { range = [6, 6], text = "Egg" },
+  { range = [7, 7], text = "Feather" },
+  { range = [8, 8], text = "Gate" },
+  { range = [9, 9], text = "Horn" },
+  { range = [10, 10], text = "Key" },
+  { range = [11, 11], text = "Ladder" },
+  { range = [12, 12], text = "Lantern" },
+  { range = [13, 13], text = "Mask" },
+  { range = [14, 14], text = "Needle" },
+  { range = [15, 15], text = "Rope" },
+  { range = [16, 16], text = "Seed" },
+  { range = [17, 17], text = "Shell" },
+  { range = [18, 18], text = "Stair" },
+  { range = [19, 19], text = "Well" },
+  { range = [20, 20], text = "Wheel" },
+]

@@ -1,0 +1,42 @@
+# A Year Zero test pack with Alien-style stress dice and panic. Placeholder text only.
+name = "Year Zero test pack"
+family = "d6-pool"
+success = 6
+
+[attributes]
+strength = "Strength"
+agility = "Agility"
+wits = "Wits"
+empathy = "Empathy"
+
+[skills]
+close_combat = "strength"
+mobility = "agility"
+observation = "wits"
+command = "empathy"
+
+[tracks]
+health = "Health"
+stress = "Stress level"
+
+[time]
+turn = 300
+shift = 21600
+
+# Dice rolled for every check: attribute dice plus skill dice.
+[pool]
+base = "attribute"
+skill = "skill"
+
+# Stress dice join every roll; a 1 on any of them fires the panic trigger.
+[extra_dice.stress]
+count = "stress"
+on_one = "panic"
+
+# Pushing raises stress by one and adds a stress die to the reroll.
+[push]
+cost = { stress = 1 }
+add_dice = { stress = 1 }
+
+[triggers.panic]
+table = "panic"

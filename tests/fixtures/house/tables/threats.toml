@@ -1,0 +1,11 @@
+# Test data.
+name = "Threats"
+formula = "1d6"
+results = [
+  { range = [1, 1], text = "Something hungry follows your trail. When the threat triggers, it pounces!" },
+  { range = [2, 2], text = "The ground here is riddled with old shafts. When the threat triggers, the floor gives way!" },
+  { range = [3, 3], text = "Someone you wronged is on your heels. When the threat triggers, they find you!" },
+  { range = [4, 4], text = "Bad air gathers in the low places. When the threat triggers, you breathe it!" },
+  { range = [5, 5], text = "The locals set snares. When the threat triggers, one closes on you!" },
+  { range = [6, 6], text = "The lamps keep guttering for no reason. When the threat triggers, the dark comes alive!" },
+]

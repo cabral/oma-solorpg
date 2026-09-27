@@ -1,0 +1,553 @@
+"""The inventory of a book, and `solo audit`: what a pack holds against what the book has.
+
+A pack compiled from a book by an agent goes wrong in two quiet ways: something in the
+book never makes it into the pack, or something appears in the pack that the book never
+said. The inventory (inventory.toml in the pack) lists what the book holds, item by item,
+with its pages, and where each item went. The audit reads it the other way too: every
+section, table, scene, NPC and rules page the pack has must be claimed by an item, and
+every page of the book with text on it must be cited by one.
+
+    source  = "Dragonbane Core Rules"
+    extract = "~/Games/solo/sources/dragonbane-core-rules"   # solo extract's folder
+
+    [items.boons_and_banes]
+    kind   = "mechanic"
+    pages  = [30, "31-32"]
+    status = "mapped"
+    to     = ["system.toml:untrained", "rules/boons_and_banes.md"]
+
+The format is in docs/PACK_FORMAT.md.
+"""
+
+import json
+import re
+import unicodedata
+from pathlib import Path
+
+from . import SoloError, packs
+from .extract import SCANNED_BELOW, chapter_level
+from .library import REPO
+
+KINDS = ("mechanic", "table", "creature", "npc", "spell", "ability", "gear", "place",
+         "event", "component", "advice", "other")
+# mapped: in the pack, where `to` says. house: in the pack, but not from the book (a stand-in).
+# engine: the engine can't run it yet (the note says what it needs). skipped: left out on
+# purpose (the note says why). todo: not decided yet.
+STATUSES = ("mapped", "house", "engine", "skipped", "todo")
+# system.toml keys that describe the pack or an import, not the game.
+_SYSTEM_META = ("name", "family", "source", "foundry", "extends")
+_RANGE = re.compile(r"^(\d+)\s*-\s*(\d+)$")
+
+
+def load_inventory(pack):
+    """inventory.toml, and every inventory/*.toml beside it: a long book is inventoried a
+    chapter to a file, so agents working on different chapters never write the same file.
+    An id in two files is a problem, not a merge."""
+    path = Path(pack) / "inventory.toml"
+    if not path.exists():
+        raise SoloError(f"{Path(pack).name} has no inventory.toml: the audit compares the pack against it (docs/PACK_FORMAT.md)")
+    data = packs.load_data(path)
+    items, problems, origin = {}, [], {}
+    files = [(path, data), *((f, packs.load_data(f)) for f in sorted((Path(pack) / "inventory").glob("*.toml")))]
+    listed = []
+    for file, content in files:
+        name = file.name if file == path else f"inventory/{file.name}"
+        for item_id, item in content.get("items", {}).items():
+            if item_id in origin:
+                problems.append(f"item {item_id}: in both {origin[item_id]} and {name} (ids are shared by the whole inventory)")
+                continue
+            origin[item_id] = name
+            listed.append((item_id, item, name))
+    for item_id, item, name in listed:
+        label = f"item {item_id}"
+        if not isinstance(item, dict):
+            problems.append(f"{label}: expected a table")
+            continue
+        status, kind = item.get("status", "todo"), item.get("kind")
+        if status not in STATUSES:
+            problems.append(f"{label}: status {status!r}, expected one of {', '.join(STATUSES)}")
+        if kind not in KINDS:
+            problems.append(f"{label}: kind {kind!r}, expected one of {', '.join(KINDS)}")
+        try:
+            pages = parse_pages(item.get("pages", []))
+        except ValueError as error:
+            problems.append(f"{label}: {error}")
+            pages = []
+        to = item.get("to", [])
+        to = [to] if isinstance(to, str) else list(to)
+        items[item_id] = {**item, "id": item_id, "name": item.get("name") or item_id.replace("_", " ").capitalize(),
+                          "status": status, "pages": pages, "to": to, "note": item.get("note", "").strip(), "file": name}
+    extract = data.get("extract")
+    return {"source": data.get("source", ""), "extract": Path(extract).expanduser() if extract else None,
+            "items": items, "problems": problems}
+
+
+def parse_pages(value):
+    """[12, "14-16"] -> [12, 14, 15, 16]."""
+    pages = []
+    for entry in [value] if isinstance(value, (int, str)) else value:
+        if isinstance(entry, int) and not isinstance(entry, bool) and entry > 0:
+            pages.append(entry)
+        elif isinstance(entry, str) and entry.strip().isdigit():
+            pages.append(int(entry))
+        elif isinstance(entry, str) and _RANGE.match(entry.strip()):
+            low, high = map(int, _RANGE.match(entry.strip()).groups())
+            if low > high:
+                raise ValueError(f"page range {entry!r} runs backwards")
+            pages += range(low, high + 1)
+        else:
+            raise ValueError(f"page {entry!r}: expected a number or a range like \"12-14\"")
+    return sorted(set(pages))
+
+
+def audit(pack, kind, extract=None):
+    """kind is "system" or "adventure". Returns a report dict; `problems` makes it fail."""
+    pack = Path(pack)
+    inventory = load_inventory(pack)
+    loaded = packs.load_system(pack) if kind == "system" else packs.load_adventure(pack)
+    items = inventory["items"]
+    problems = list(inventory["problems"])
+    for item in items.values():
+        problems += _item_problems(item, pack, loaded)
+
+    units = pack_units(pack, kind, loaded)
+    claimed = [ref for item in items.values() if item["status"] in ("mapped", "house") for ref in item["to"]]
+    unclaimed = [unit for unit in units if not any(_covers(ref, unit) for ref in claimed)]
+
+    report = {
+        "pack": pack.name,
+        "source": inventory["source"],
+        "counts": {s: sum(1 for i in items.values() if i["status"] == s) for s in STATUSES},
+        "todo": [i for i in items.values() if i["status"] == "todo"],
+        "problems": problems,
+        "unclaimed": unclaimed,
+        "engine": [i for i in items.values() if i["status"] == "engine"],
+        "prose_only": [i for i in items.values() if i["status"] == "mapped" and i["kind"] == "mechanic"
+                       and i["to"] and all(ref.startswith("rules/") for ref in i["to"])],
+        "units": len(units),
+    }
+    folder = Path(extract).expanduser() if extract else inventory["extract"]
+    report["pages"] = _page_coverage(folder, items) if folder else None
+    book = _book_pages(folder) if folder else {}
+    report["unverified"] = [line for item in items.values() for line in _checked(item, loaded, book)] if book else []
+    report["files"] = _progress(items)
+    return report
+
+
+def failed(report):
+    pages = report["pages"]
+    return bool(report["todo"] or report["problems"] or report["unclaimed"] or report.get("unverified")
+                or (pages and (pages["missing"] or pages["uncited"] or pages["beyond"])))
+
+
+# Items -----------------------------------------------------------------------------------
+
+def _item_problems(item, pack, loaded):
+    label, status = f"item {item['id']}", item["status"]
+    problems = []
+    if status in ("mapped", "house") and not item["to"]:
+        problems.append(f"{label}: {status} but `to` names nothing in the pack")
+    if status in ("house", "engine", "skipped") and not item["note"]:
+        why = {"house": "where it comes from, since the book doesn't give it", "engine": "what the engine needs to run it",
+               "skipped": "why it's left out"}[status]
+        problems.append(f"{label}: {status} needs a note saying {why}")
+    if status != "house" and not item["pages"]:
+        problems.append(f"{label}: no pages (every item from the book cites where it is)")
+    for ref in item["to"]:
+        error = resolve(ref, pack, loaded)
+        if error:
+            problems.append(f"{label}: to {ref!r}: {error}")
+    return problems
+
+
+def resolve(ref, pack, loaded):
+    """None if the reference names something in the pack, else what's wrong.
+
+    tables/fear, npcs/priest, characters/ragna     a file by its stem
+    rules/fear.md                                  a file by its name
+    scenes/cellar                                  a scene, in scenes.json, adventure.toml or scenes/
+    system.toml:combat.damage_bonus                a key inside a TOML or JSON file
+    skill:solo-gm                                  one of the repository's skills (GM advice)
+    """
+    if ref.startswith("skill:"):
+        return None if (REPO / "skills" / ref[6:] / "SKILL.md").exists() else f"no skill called {ref[6:]!r}"
+    # A pack laid over another (extends) can map an item to what the base already holds:
+    # the book's check on its numbers is what shows whether the base had them right.
+    errors = [_resolve_in(ref, Path(root), loaded) for root in loaded.get("dirs") or [pack]]
+    return None if None in errors else errors[0]
+
+
+def _resolve_in(ref, pack, loaded):
+    path, _, key = ref.partition(":")
+    if path.startswith("scenes/") and not key and "scenes" in loaded:
+        return None if Path(path).stem in loaded["scenes"] else "no such scene"
+    target = pack / path
+    if not target.suffix and not key:
+        matches = list(target.parent.glob(f"{target.name}.*")) if target.parent.is_dir() else []
+        return None if matches else "no such file"
+    if not target.exists():
+        return "no such file"
+    if key:
+        if target.suffix not in (".toml", ".json"):
+            return "only TOML and JSON files have keys"
+        node = packs.load_data(target)
+        for part in key.split("."):
+            if not isinstance(node, dict) or part not in node:
+                return f"no key {key!r} in {path}"
+            node = node[part]
+    return None
+
+
+# What the pack holds -------------------------------------------------------------------
+
+def pack_units(pack, kind, loaded):
+    """Everything in the pack an item must claim, as references."""
+    units = []
+    if kind == "system":
+        for name in ("system.toml", "creation.toml", "gear.toml"):
+            path = pack / name
+            if path.exists():
+                data = packs.load_data(path)
+                skip = _SYSTEM_META if name == "system.toml" else ()
+                units += [f"{name}:{key}" for key in _keys(data) if key.split(".")[0] not in skip]
+    else:
+        units += [f"scenes/{sid}" for sid in loaded["scenes"]]
+        units += [f"npcs/{nid}" for nid in loaded["npcs"]]
+        spec = pack / "adventure.toml"
+        data = packs.load_data(spec) if spec.exists() else {}
+        for section in ("factions", "clocks", "weapons"):
+            units += [f"adventure.toml:{section}.{key}" for key in data.get(section, {})]
+    # This pack's own files: a pack laid over another claims only what it adds.
+    units += [f"tables/{tid}" for tid in packs._load_folder(pack / "tables")]
+    units += [f"characters/{cid}" for cid in packs._load_folder(pack / "characters")]
+    units += [f"bestiary/{mid}" for mid in packs._load_folder(pack / "bestiary")]
+    units += [f"rules/{p.name}" for p in sorted((pack / "rules").glob("*.md"))]
+    return units
+
+
+def _keys(data):
+    """A section whose values are all tables is claimed one entry at a time (each weapon,
+    each rest, each creation choice); any other section as a whole."""
+    keys = []
+    for key, value in data.items():
+        if isinstance(value, dict) and value and all(isinstance(v, dict) for v in value.values()):
+            keys += [f"{key}.{sub}" for sub in value]
+        else:
+            keys.append(key)
+    return keys
+
+
+def _covers(ref, unit):
+    """A reference claims what it names and anything under it: system.toml:weapons claims
+    every weapon (the book's weapons table), system.toml:weapons.dagger only the dagger, and
+    a reference deeper than a unit (weapons.dagger.damage) still claims its unit.
+    tables/fear.toml claims tables/fear."""
+    ref = re.sub(r"^(tables|npcs|characters|scenes|bestiary)/([^:/]+)\.(toml|json|md)$", r"\1/\2", ref)
+    return ref == unit or ref.startswith(unit + ".") or unit.startswith(ref + ".")
+
+
+# What the book holds -------------------------------------------------------------------
+
+def _page_coverage(folder, items):
+    manifest_path = folder / "manifest.json"
+    if not manifest_path.exists():
+        return {"folder": str(folder), "missing": True, "uncited": [], "chapters": [], "beyond": []}
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    toc_path = folder / "toc.json"
+    toc = json.loads(toc_path.read_text(encoding="utf-8")) if toc_path.exists() else []
+    texts = sorted(folder.glob("pages/*.txt"))
+    with_text = {int(p.stem) for p in texts if len(p.read_text(encoding="utf-8").strip()) >= SCANNED_BELOW}
+    cited = {page for item in items.values() for page in item["pages"]}
+    uncited = sorted(with_text - cited)
+    top = chapter_level(toc)
+    chapters = []
+    for entry in (e for e in toc if e["level"] == top):
+        span = set(range(entry["start"], entry["end"] + 1))
+        missing = sorted(span & set(uncited))
+        if missing:
+            chapters.append({"title": entry["title"], "start": entry["start"], "end": entry["end"], "uncited": missing})
+    return {"folder": str(folder), "missing": False, "source": manifest.get("source"), "pages": manifest.get("pages"),
+            "with_text": len(with_text), "cited": len(with_text & cited), "uncited": uncited, "chapters": chapters,
+            "beyond": sorted(p for p in cited if p > manifest.get("pages", 0))}
+
+
+# Checked against the book ----------------------------------------------------------------
+#
+# Coverage says every item went somewhere; it can't say the pack copied the book right. An
+# agent that half-remembers a rulebook writes plausible numbers. So what a mapped item
+# points at is read back against the pages it cites: a table's results, word for word
+# (order aside, since columns scramble), and in any data (weapons, rests, monsters, gear)
+# every dice expression, stat and price.
+
+_CHECKS_SHOWN = 5
+
+
+def _book_pages(folder):
+    pages = {}
+    for path in sorted(Path(folder).glob("pages/*.txt")):
+        try:
+            pages[int(path.stem)] = _norm(path.read_text(encoding="utf-8"))
+        except ValueError:
+            continue
+    return pages
+
+
+def _norm(text):
+    # A soft hyphen marks where a word may break ("market\u00adplace"), at a line's end too.
+    text = unicodedata.normalize("NFKC", re.sub(r"\u00ad\s*", "", str(text))).lower()
+    return " ".join(re.sub(r"[\u2010-\u2015\u2212]", "-", text).replace("\u00d7", "x").split())
+
+
+def _checked(item, loaded, book):
+    if item["status"] != "mapped" or not item["pages"]:
+        return []
+    text = " ".join(book.get(page, "") for page in item["pages"])
+    if not text.strip():
+        return []
+    words = set(re.findall(r"[a-z0-9]+", text))
+    where = f"p. {spans(item['pages'])}"
+    found = []
+    for ref in item["to"]:
+        data = _data_for(ref, loaded)
+        if data is None:
+            continue
+        if ref.startswith("tables/"):
+            for result in data.get("results", []):
+                missing = _missing_words(result.get("text", ""), words)
+                if missing:
+                    low, high = (result.get("range") or ["?", "?"])[:2]
+                    label = f"{low}" if low == high else f"{low}-{high}"
+                    found.append(f"{item['id']}: {ref} result {label} \"{_short(result.get('text', ''))}\" isn't on {where} "
+                                 f"(no {', '.join(missing[:4])})")
+        # A table's own dice are often never printed (the book just lists 1-6); its results' dice are.
+        for dice in sorted(set(_dice_in({k: v for k, v in data.items() if k != "formula"} if ref.startswith("tables/") else data))):
+            if not _dice_on(dice, text):
+                found.append(f"{item['id']}: {ref} has {dice}, and {where} never says it")
+        for label, number in _numbers_in(ref, data):
+            if str(number) not in words:
+                found.append(f"{item['id']}: {ref} gives {label} {number}, and {where} never says it")
+    return found[:_CHECKS_SHOWN] + ([f"{item['id']}: and {len(found) - _CHECKS_SHOWN} more like these"] if len(found) > _CHECKS_SHOWN else [])
+
+
+def _data_for(ref, loaded):
+    """What a reference points at, as the engine loaded it (every layer of a pack)."""
+    path, _, key = ref.partition(":")
+    stem = Path(path).stem
+    if path.startswith("tables/"):
+        return loaded.get("tables", {}).get(stem)
+    elif path.startswith("bestiary/"):
+        return loaded.get("bestiary", {}).get(stem)
+    elif path.startswith("npcs/"):
+        return loaded.get("npcs", {}).get(stem)
+    roots = {"system.toml": loaded, "adventure.toml": loaded, "creation.toml": loaded.get("creation"),
+             "gear.toml": {"gear": loaded.get("gear"), "money": loaded.get("money")}}
+    if not key or path not in roots:
+        return None
+    node = roots[path]
+    for part in key.split("."):
+        node = node.get(part) if isinstance(node, dict) else None
+    return node
+
+
+_DICE = re.compile(r"\b(\d*)d(\d+)\b")
+
+
+def _dice_in(data):
+    if isinstance(data, dict):
+        for value in data.values():
+            yield from _dice_in(value)
+    elif isinstance(data, list):
+        for value in data:
+            yield from _dice_in(value)
+    elif isinstance(data, str):
+        for count, sides in _DICE.findall(data.lower()):
+            yield f"{count if count not in ('', '1') else ''}d{sides}"
+
+
+def _dice_on(dice, text):
+    count, _, sides = dice.partition("d")
+    pattern = rf"\b{count}d{sides}\b" if count else rf"(?<![0-9])(1)?d{sides}\b"
+    return re.search(pattern, text) is not None
+
+
+def _numbers_in(ref, data):
+    """The numbers a stat block or a price stands on: hit points, armor, ferocity; what a
+    thing costs."""
+    numbers = []
+    if isinstance(data, dict) and ref.startswith(("bestiary/", "npcs/")):
+        stats = data.get("stats", {})
+        numbers += [(k, stats[k]) for k in ("hp", "armor", "ferocity") if isinstance(stats.get(k), int) and stats[k] > 0]
+    if isinstance(data, dict) and "price" in data:
+        numbers += [("price", int(n)) for n in re.findall(r"\d+", str(data["price"]))]
+    return numbers
+
+
+_STOP = {"with", "that", "this", "from", "your", "they", "their", "them", "have", "into", "when", "which", "will", "were", "been"}
+
+
+def _missing_words(text, words):
+    tokens = [w for w in re.findall(r"[a-z]+", _norm(re.sub(r"\{[^}]*\}", "", text))) if len(w) >= 4 and w not in _STOP]
+    missing = [w for w in tokens if w not in words and w.rstrip("s") not in words and f"{w}s" not in words]
+    return missing if tokens and len(missing) * 3 > len(tokens) else []
+
+
+def _short(text, size=60):
+    text = " ".join(str(text).split())
+    return text if len(text) <= size else text[:size - 3].rsplit(" ", 1)[0] + "..."
+
+
+def _progress(items):
+    files = {}
+    for item in items.values():
+        entry = files.setdefault(item["file"], {"total": 0, "todo": 0})
+        entry["total"] += 1
+        entry["todo"] += item["status"] == "todo"
+    return files
+
+
+# Starting an inventory ------------------------------------------------------------------
+
+_KIND_WORDS = [
+    ("spell", ("spell", "spells", "magic", "school", "trick", "tricks", "rituals")),
+    ("creature", ("monster", "monsters", "creature", "creatures", "bestiary", "beast", "beasts", "animals")),
+    ("gear", ("gear", "equipment", "weapons", "weapon", "armor", "armour", "prices", "price", "goods", "services", "shields")),
+    ("ability", ("ability", "abilities", "talent", "talents", "heroic")),
+    ("table", ("table", "tables", "mishap", "mishaps", "random", "encounters")),
+    ("npc", ("npcs", "characters", "people")),
+    ("place", ("places", "map", "maps", "region", "world", "gazetteer")),
+    ("advice", ("advice", "tips", "running", "gamemaster", "game master")),
+]
+
+
+def scaffold(pack, folder, source=None):
+    """A first inventory from a book's extract: inventory.toml with the source and the
+    extract, and a file per chapter under inventory/ with an item per section (the chapter
+    itself when it has none) and one per table found, each `todo` with its pages and a
+    guessed kind. Every page with text is cited from the start, so the audit's page check
+    only has to hold; an agent per chapter file refines, merges, renames and maps them."""
+    pack, folder = Path(pack), Path(folder).expanduser().resolve()
+    manifest_path, toc_path = folder / "manifest.json", folder / "toc.json"
+    if not manifest_path.exists():
+        raise SoloError(f"{folder} isn't solo extract's folder (no manifest.json): run solo extract on the book first")
+    if pack.resolve() == folder or folder in pack.resolve().parents:
+        raise SoloError(f"{pack} is the book's extract: the inventory goes in the pack the book becomes, like ~/Games/solo/systems/<system>")
+    if (pack / "inventory.toml").exists() or (pack / "inventory").exists():
+        raise SoloError(f"{pack} already has an inventory: the scaffold only starts one")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    toc = json.loads(toc_path.read_text(encoding="utf-8")) if toc_path.exists() else []
+    index_path = folder / "tables" / "index.json"
+    tables = json.loads(index_path.read_text(encoding="utf-8")) if index_path.exists() else []
+    top = chapter_level(toc) if toc else 1
+    chapters = [e for e in toc if e["level"] == top] or [{"title": source or manifest.get("source", "Book"), "start": 1, "end": manifest["pages"]}]
+    taken, written = set(), []
+    (pack / "inventory").mkdir(parents=True)
+    for number, chapter in enumerate(chapters, 1):
+        sections = [e for e in toc if e["level"] == top + 1 and chapter["start"] <= e["start"] <= chapter["end"]]
+        items = []
+        lead_end = (sections[0]["start"] - 1) if sections else chapter["end"]
+        if lead_end >= chapter["start"]:
+            items.append((chapter["title"], chapter["start"], lead_end, None))
+        items += [(s["title"], s["start"], s["end"], None) for s in sections]
+        items += [(f"Table on page {t['page']}", t["page"], t["page"], t) for t in tables if chapter["start"] <= t["page"] <= chapter["end"]]
+        lines = [f"# {chapter['title']}, pages {chapter['start']}-{chapter['end']}" + (f" ({chapter['file']})" if chapter.get("file") else ""),
+                 "# A first cut from the extract: rename, merge, split and map every item, then set its status.", ""]
+        for title, start, end, table in items:
+            item_id = _unique(packs.slug(title) or "item", taken)
+            kind = "table" if table else _guess_kind(title)
+            lines += [f"[items.{item_id}]", f"name = {packs.toml_string(title)}", f'kind = "{kind}"',
+                      f"pages = [{start}]" if start == end else f'pages = ["{start}-{end}"]', 'status = "todo"']
+            if table:
+                found = f"tables/{table['file']}" if table.get("file") else f"{table.get('lines', '?')} roll lines"
+                picture = table.get("image", "")
+                lines.append(f"note = {packs.toml_string(f'solo extract found it: {found}, picture tables/{picture}')}")
+            lines.append("")
+        name = f"inventory/{number:02d}-{packs.slug(chapter['title'])[:40].replace('_', '-') or 'chapter'}.toml"
+        (pack / name).write_text("\n".join(lines), encoding="utf-8")
+        written.append(name)
+    header = [f"source  = {packs.toml_string(source or Path(manifest.get('source', 'book')).stem)}",
+              f"extract = {packs.toml_string(str(folder))}", "",
+              "# The items are in inventory/, a file per chapter. See docs/PACK_FORMAT.md.", ""]
+    (pack / "inventory.toml").write_text("\n".join(header), encoding="utf-8")
+    return ["inventory.toml", *written]
+
+
+def _guess_kind(title):
+    words = set(re.findall(r"[a-z]+", title.lower()))
+    return next((kind for kind, keys in _KIND_WORDS if words & set(keys)), "mechanic")
+
+
+def _unique(base, taken):
+    name, number = base, 2
+    while name in taken:
+        name, number = f"{base}_{number}", number + 1
+    taken.add(name)
+    return name
+
+
+def spans(pages):
+    """[1, 2, 3, 7, 9, 10] -> "1-3, 7, 9-10"."""
+    runs = []
+    for page in pages:
+        if runs and page == runs[-1][1] + 1:
+            runs[-1][1] = page
+        else:
+            runs.append([page, page])
+    return ", ".join(str(a) if a == b else f"{a}-{b}" for a, b in runs)
+
+
+# The report --------------------------------------------------------------------------------
+
+def render(report):
+    counts = report["counts"]
+    total = sum(counts.values())
+    source = f" against {report['source']}" if report["source"] else ""
+    lines = [f"# Audit of {report['pack']}{source}", "",
+             f"{total} items: " + ", ".join(f"{n} {s}" for s, n in counts.items() if n) + ".",
+             f"The pack holds {report['units']} thing{'' if report['units'] == 1 else 's'} an item must claim.", ""]
+    verdict = "Something is unaccounted for." if failed(report) else "Everything is accounted for."
+    lines += [verdict, ""]
+    if report["problems"]:
+        lines += [f"## Wrong in the inventory ({len(report['problems'])})", *[f"- {p}" for p in report["problems"]], ""]
+    if report["todo"]:
+        lines += [f"## Not decided yet ({len(report['todo'])})", *[f"- {_item_line(i)}" for i in report["todo"]], ""]
+    if report["unclaimed"]:
+        lines += [f"## In the pack, but no item says where it comes from ({len(report['unclaimed'])})",
+                  "Cite the book for each, or mark it house with a note if the book doesn't give it.",
+                  *[f"- {u}" for u in report["unclaimed"]], ""]
+    pages = report["pages"]
+    if pages is None:
+        lines += ["## The book's pages", "Not checked: set `extract` in inventory.toml or pass --extract (solo extract's folder).", ""]
+    elif pages["missing"]:
+        lines += ["## The book's pages", f"No manifest.json in {pages['folder']}: run solo extract into it.", ""]
+    else:
+        lines += ["## The book's pages",
+                  f"{pages['cited']} of {pages['with_text']} pages with text are cited ({pages['source']}, {pages['pages']} pages)."]
+        if pages["uncited"]:
+            lines += ["No item cites these. Read them: each becomes an item, joins one, or is skipped with a note (credits, index, fiction).",
+                      *[f"- {c['title']} (p. {spans(range(c['start'], c['end'] + 1))}): {spans(c['uncited'])}" for c in pages["chapters"]]]
+            outside = sorted(set(pages["uncited"]) - {p for c in pages["chapters"] for p in c["uncited"]})
+            if outside:
+                lines.append(f"- outside any chapter: {spans(outside)}")
+        if pages["beyond"]:
+            lines.append(f"Cited, but past the book's last page: {spans(pages['beyond'])}.")
+        lines.append("")
+    if report.get("unverified"):
+        lines += [f"## Not on the cited pages ({len(report['unverified'])})",
+                  "The pack says something its pages don't. Copy it from the book (a scrambled table reads right in its picture, "
+                  "tables/pNNNN.png), or cite the right pages. A difference on purpose is a house item, with a note.",
+                  *[f"- {line}" for line in report["unverified"]], ""]
+    if len(report.get("files", {})) > 1:
+        lines += ["## By file", *[f"- {name}: {c['todo']} of {c['total']} still todo" if c["todo"] else f"- {name}: all {c['total']} decided"
+                                  for name, c in report["files"].items()], ""]
+    if report["engine"]:
+        lines += [f"## Needs engine work ({len(report['engine'])})", *[f"- {_item_line(i)}" + (f": {i['note']}" if i["note"] else "") for i in report["engine"]], ""]
+    if report["prose_only"]:
+        lines += [f"## Mechanics only in rules pages ({len(report['prose_only'])})",
+                  "The GM reads these; the engine doesn't run them. Fine for now, but each is a candidate for data.",
+                  *[f"- {_item_line(i)}" for i in report["prose_only"]], ""]
+    return "\n".join(lines)
+
+
+def _item_line(item):
+    where = f" (p. {spans(item['pages'])})" if item["pages"] else ""
+    return f"{item['id']}: {item['name']}{where}"

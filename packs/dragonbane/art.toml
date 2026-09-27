@@ -1,0 +1,370 @@
+# Portraits for Dragonbane heroes, drawn in text. solo/portrait.py puts them together.
+#
+# A head is drawn once per kin, with slots the engine fills from the hero's state:
+#   L R    the left and right eye           l r    the left and right brow
+#   mmmm   the mouth (always four wide)     w      a wound mark (blank while unhurt)
+#   a      a line of age (blank unless old)
+# Those letters are slots wherever they appear, so the drawing itself never uses them.
+# Headgear comes from the profession and sits on top: its last row (the brim) replaces the
+# head's first row (the crown), centred on it, and a space in it lets the head show through.
+#
+# The Book colours each stroke by what it is. The slots say so themselves, a shaded block
+# (░▒▓) or an @ is hair, a ◆ is gold, and headgear is headgear; anything else is the line
+# of the face. An `ink` block beside a head or a hat, the same shape, marks the strokes
+# whose character can't say it: h hair (fur, feathers, a beard of | and /), o gold.
+#
+# Moods come from the hero's state: dead, dying, the newest condition held, a Dragon just
+# rolled (triumph), hurt at a quarter of HP or less, or calm. Wounds show at half HP and
+# get worse at a quarter. Keep to ASCII, box drawing, blocks and ● ○ • ◆ ▼: every
+# monospace Nerd Font draws those one cell wide, so the layers line up.
+
+[moods.calm]
+eyes = ["●", "●"]
+brows = ["─", "─"]
+mouth = "╶──╴"
+
+[moods.triumph]
+eyes = ["◆", "◆"]
+brows = ["─", "─"]
+mouth = "╰──╯"
+
+[moods.hurt]
+eyes = ["─", "●"]
+brows = ["╲", "─"]
+mouth = "╭──╮"
+
+[moods.exhausted]
+eyes = ["─", "─"]
+brows = [" ", " "]
+mouth = "╶╌╌╴"
+
+[moods.sickly]
+eyes = ["●", "●"]
+brows = ["~", "~"]
+mouth = "~~~~"
+
+[moods.dazed]
+eyes = ["@", "@"]
+brows = ["~", "~"]
+mouth = " ○  "
+
+[moods.angry]
+eyes = ["●", "●"]
+brows = ["╲", "╱"]
+mouth = "╤╤╤╤"
+
+[moods.scared]
+eyes = ["○", "○"]
+brows = ["╱", "╲"]
+mouth = "╭○○╮"
+
+[moods.disheartened]
+eyes = ["•", "•"]
+brows = ["╱", "╲"]
+mouth = "╭──╮"
+
+[moods.dying]
+eyes = ["─", "─"]
+brows = [" ", " "]
+mouth = "╶──╴"
+
+[moods.dead]
+eyes = ["╳", "╳"]
+brows = [" ", " "]
+mouth = "╶~~╴"
+
+[wounds]
+marks = [" ", "╱", "╳"]
+
+[age]
+old = "~"
+
+
+
+[kin.human]
+head = '''
+      _.--------._
+    .'/////  \\\\\'.
+   /    l      r    \
+  |     L      R     |
+ (|          \       |)
+  |  w      _)    a  |
+   \      mmmm      /
+    \              /
+     '.          .'
+       '-.____.-'
+'''
+ink = '''
+
+      hhhhh  hhhhh
+'''
+
+[kin.halfling]
+head = '''
+      _.--------._
+    .@@@@@@@@@@@@@@.
+   @@@@ l      r @@@@
+  (@@   L      R   @@)
+   |         \      |
+   (  w     _)   a  )
+    \     mmmm     /
+     '._        _.'
+        '------'
+'''
+
+[kin.dwarf]
+head = '''
+      _.--------._
+    .'            '.
+   /    l      r    \
+  |     L      R     |
+ (|          \       |)
+  |  w      _)    a  |
+  |\\\\\\ mmmm //////|
+   \||||||||||||||||/
+    \||||||||||||||/
+     \||||||||||||/
+      '-.||||||.-'
+         ◆ || ◆
+           ◆◆
+'''
+ink = '''
+
+
+
+
+
+
+   hhhhhh      hhhhhh
+    hhhhhhhhhhhhhhhh
+     hhhhhhhhhhhhhh
+      hhhhhhhhhhhh
+         hhhhhh
+           hh
+'''
+
+[kin.elf]
+head = '''
+      _.--------._
+    .'||||||||||||'.
+   /||  l      r  ||\
+ <( ||  L      R  || )>
+    ||      \     ||
+    ||w    _)   a ||
+    ||\   mmmm   /||
+    || '.      .' ||
+    ||   '----'   ||
+    ''            ''
+'''
+ink = '''
+
+      hhhhhhhhhhhh
+    hh            hh
+    hh            hh
+    hh            hh
+    hh            hh
+    hh            hh
+    hh            hh
+    hh            hh
+    hh            hh
+'''
+
+[kin.mallard]
+head = '''
+      _.--------._
+    .'  ,,,,,,,,  '.
+   /    l      r    \
+  |     L      R     |
+  |  w            a  |
+  .-""""""""""""""-.
+ (       mmmm       )
+  '-.____________.-'
+     \          /
+      '--------'
+'''
+ink = '''
+
+        hhhhhhhh
+'''
+
+[kin.wolfkin]
+head = '''
+  /\  _.--------._  /\
+ /,,\/,,,,,,,,,,,,\/,,\
+ |,,    l      r    ,,|
+  \,    L      R    ,/
+   |  w  .------. a |
+   \     | \/\/ |   /
+    \    '.mmmm.'  /
+     \,,,,,,,,,,,,,/
+      '-.,,,,,,.-'
+'''
+ink = '''
+
+  hh  hhhhhhhhhhhh  hh
+  hh                hh
+   h                h
+
+   
+
+      hhhhhhhhhhhhh
+         hhhhhh
+'''
+
+
+[gear.fighter]
+top = '''
+        .------.
+      .'  |  |  '.
+    [=====|==|=====]
+'''
+
+[gear.knight]
+top = '''
+       .-""""""-.
+      |  ==||==  |
+    [======◆◆======]
+'''
+
+[gear.hunter]
+top = '''
+             ,//
+      .-----//--.
+    .-'__________'-.
+'''
+ink = '''
+             ooo
+            oo
+'''
+
+[gear.mage]
+top = '''
+           /\
+         _/◆◆\_
+  '-.____/____\____.-'
+'''
+
+[gear.thief]
+top = '''
+        .------.
+      .'::::::::'.
+    .'::::::::::::'.
+'''
+
+[gear.bard]
+top = '''
+               ~,
+       .-~~~~~~/~.
+    .-'__________'-.
+'''
+ink = '''
+               oo
+              o
+'''
+
+[gear.scholar]
+top = '''
+    ________________
+    \______________/◆
+       |________|
+'''
+
+[gear.mariner]
+top = '''
+   .-.            .-.
+   \  '-.______.-'  /
+    '-.__________.-'
+'''
+
+[gear.merchant]
+top = '''
+         .-◆◆-.
+     .~~'~~~~~~'~~.
+    (~~~~~~~~~~~~~~)
+'''
+
+[gear.artisan]
+top = '''
+
+       .--------.
+    [==(O)====(O)==]
+'''
+ink = '''
+
+
+       ooo    ooo
+'''
+
+# Small figures for the fight scene: the hero (with a blade and shield, a bow or a staff,
+# by the weapon they fight with best), and generic foes for NPCs that have no sprite of
+# their own (an adventure's art.toml adds those).
+
+[sprites.hero]
+art = '''
+      .-.
+     (o o)     /
+   .-/)=(\-.  /
+   |#|)=(| | /
+   '-'/ \'-'/
+     /   \
+    /     \
+'''
+
+[sprites.hero_ranged]
+art = '''
+      .-.    |\
+     (o o)   | \
+   .-/)=(\---+--)>
+     |)=(|   | /
+     / \ '   |/
+    /   \
+   /     \
+'''
+
+[sprites.hero_magic]
+art = '''
+      /\      *
+     /  \    \|/
+    (o  o)    |
+   .-)~~(-----+
+     |~~|     |
+    /    \    |
+   /______\   |
+'''
+
+[sprites.humanoid]
+art = '''
+      .-.
+     (o o)
+ \  .-)=(-.
+  \ | |=| |
+   \' / \ '
+     /   \
+    /     \
+'''
+
+[sprites.beast]
+art = '''
+    /\__/\_____
+   ( o  o      )~~
+   (  ww   )__/
+    \_/ \_/  \_\
+'''
+
+[sprites.monster]
+art = '''
+    .-""""""-.
+   / @      @ \
+  |  /\/\/\/\  |
+  |\/\/\/\/\/\/|
+   \_/\    /\_/
+'''
+
+[sprites.fallen]
+art = '''
+
+
+
+     ___
+  __(x x)__,,
+'''

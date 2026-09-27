@@ -1,0 +1,20 @@
+# Authored profile. It extends npcs/orc_leader.json (the stat block an import would
+# produce), and its keys win where both files set the same one.
+name = "Grukk Red Tusk"
+role = "Chieftain of the Red Tusk orcs"
+faction = "orcs"
+attitude = "unfriendly"
+wants = "Riches for his warband, and his three missing warriors back."
+fears = "The priest in the cellar, and looking weak in front of his warband."
+voice = "Slow and loud; laughs at his own threats."
+
+# His stats come from orc_leader.json (the import); this is how he fights.
+[attack]
+label = "Battleaxe"
+skill = "axes"
+damage = "2d8"
+
+[[secrets]]
+id = "tunnel"
+text = "A smugglers' tunnel runs from behind the throne straight to the ritual cave."
+reveal = "npc.orc_leader.attitude >= friendly"

@@ -1,0 +1,11 @@
+# Test data.
+name = "Scavenge"
+formula = "1d10"
+results = [
+  { range = [1, 1], text = "Something bites back", choices = ["a rat", "a mould", "a loose blade"] },
+  { range = [2, 4], text = "Dust and old straw" },
+  { range = [5, 5], text = "Odds and ends", choices = ["a coil of string", "a flask of oil", "a whetstone", "a torch"] },
+  { range = [6, 6], text = "A curiosity", choices = ["a bent key", "a torn letter", "a painted pebble"] },
+  { range = [7, 9], text = "A find from the treasure deck", then = "treasure" },
+  { range = [10, 10], text = "A find from the treasure deck, and dig again", then = ["treasure", "scavenge"] },
+]

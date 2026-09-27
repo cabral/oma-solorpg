@@ -1,0 +1,131 @@
+# Test data: made-up creation tables in the shape a book's take, short enough to read.
+# Names come from the bundled pack's [names] lists.
+
+attributes = "3d6"
+attribute_range = [3, 18]
+key_swap = true
+trained_multiplier = 2
+tracks = { hp = "con", wp = "wil" }
+extra_abilities = { count = 1, from = ["Army of One", "Sole Survivor"] }
+
+[ratings.movement]
+label = "Movement"
+attribute = "agl"
+table = [[7, -2], [13, 0], [18, 2]]
+
+[ratings.str_damage]
+label = "Damage bonus (STR)"
+attribute = "str"
+table = [[11, "none"], [15, "+D4"], [18, "+D8"]]
+
+[choose.kin]
+label = "Kin"
+roll = "1d8"
+
+[choose.kin.options.human]
+range = [1, 3]
+abilities = ["Quick Study"]
+ratings = { movement = 10 }
+
+[choose.kin.options.dwarf]
+range = [4, 5]
+abilities = ["Stone Sense"]
+ratings = { movement = 8 }
+
+[choose.kin.options.elf]
+range = [6, 6]
+abilities = ["Starlit Eyes"]
+ratings = { movement = 10 }
+
+[choose.kin.options.wolfkin]
+range = [7, 8]
+abilities = ["Keen Nose"]
+ratings = { movement = 12 }
+
+[choose.profession]
+label = "Profession"
+roll = "1d6"
+
+[choose.profession.options.artisan]
+range = [1, 1]
+key = "str"
+skills = ["crafting", "hammers", "awareness", "bartering", "knives", "spot_hidden", "brawling", "axes"]
+train = 5
+then = "craft"
+gear = ["Torch", "{1d4} field rations", "{1d6} silver"]
+
+[choose.profession.options.fighter]
+range = [2, 2]
+key = "str"
+skills = ["swords", "spears", "evade", "brawling", "awareness", "bows", "axes", "riding"]
+train = 5
+abilities = ["Shield Wall"]
+kits = [["Broadsword", "Shield", "Chainmail"], ["Spear", "Leather armor", "Open helmet"]]
+gear = ["Torch", "{1d4} field rations", "{1d6} silver"]
+
+[choose.profession.options.mage]
+range = [3, 3]
+key = "wil"
+then = "school"
+kits = [["Staff"], ["Dagger", "Candle stub"]]
+gear = ["Spellbook", "Torch", "{1d4} field rations", "{1d6} silver"]
+
+[choose.profession.options.scholar]
+range = [4, 4]
+key = "int"
+skills = ["languages", "myths_legends", "healing", "beast_lore", "awareness", "spot_hidden", "evade", "persuasion"]
+train = 5
+abilities = ["Well Read"]
+kits = [["Dagger", "Notebook"], ["Staff", "Lantern"]]
+gear = ["Torch", "{1d4} field rations", "{1d8} silver"]
+
+[choose.profession.options.thief]
+range = [5, 6]
+key = "agl"
+skills = ["sneaking", "sleight_of_hand", "acrobatics", "knives", "evade", "bluffing", "awareness", "spot_hidden"]
+train = 5
+abilities = ["Light Fingers"]
+kits = [["Dagger", "Lockpicks"], ["Dagger", "Short bow", "Rope"]]
+gear = ["Torch", "{1d4} field rations", "{1d8} silver"]
+
+[choose.craft]
+label = "Craft"
+
+[choose.craft.options.smith]
+abilities = ["Forge Hand"]
+gear = ["Hammer", "Tongs"]
+
+[choose.craft.options.cooper]
+abilities = ["Barrel Maker"]
+gear = ["Mallet", "Hoops"]
+
+[choose.school]
+label = "School"
+
+[choose.school.options.animist]
+always = ["animism"]
+skills = ["animism", "beast_lore", "bushcraft", "healing", "sneaking", "staves", "evade", "awareness"]
+train = 5
+
+[choose.school.options.elementalist]
+always = ["elementalism"]
+skills = ["elementalism", "awareness", "languages", "myths_legends", "spot_hidden", "staves", "evade", "healing"]
+train = 5
+
+[choose.age]
+label = "Age"
+roll = "1d6"
+
+[choose.age.options.young]
+range = [1, 2]
+attributes = { agl = 1 }
+extra = 1
+
+[choose.age.options.adult]
+range = [3, 4]
+extra = 3
+
+[choose.age.options.old]
+range = [5, 6]
+attributes = { str = -1, agl = -1, int = 1, wil = 1 }
+extra = 5

@@ -1,0 +1,34 @@
+{
+  "name": "Red Tusk Hall",
+  "pages": [
+    {
+      "_id": "pgGate000000001",
+      "name": "The Palisade Gate",
+      "type": "text",
+      "sort": 100,
+      "text": {
+        "format": 1,
+        "content": "<p>The gate is shut. A torch   gutters above it.</p><section class=\"secret\" id=\"secret-abc\"><p>Two guards watch. On a failed <strong>SNEAKING</strong> roll they raise the alarm. Roll [[/r 1d6]] for the patrol.</p></section><p>Paths: @UUID[JournalEntry.jrnRedTusk00001.JournalEntryPage.pgHall000000001]{Into the hall} or @UUID[.pgRoad000000001]{back to the road}.</p><p>@UUID[RollTable.tblOmens0000001]{Omens}</p>"
+      }
+    },
+    {
+      "_id": "pgHall000000001",
+      "name": "Chieftain's Hall",
+      "type": "text",
+      "sort": 200,
+      "text": {
+        "format": 1,
+        "content": "<h2>The Hall</h2><p>@UUID[Actor.actGrukk000001]{Grukk} sits on a throne of shields.</p><ul><li>Two guards</li><li>A fire pit</li></ul><table><tr><th>Roll</th><th>Result</th></tr><tr><td>1-3</td><td>Grukk laughs</td></tr><tr><td>4-6</td><td>Grukk attacks</td></tr></table><blockquote><p>\"Who dares?\"</p></blockquote><p>@UUID[JournalEntry.jrnRedTusk00001.JournalEntryPage.pgGate000000001#top]{Back to the gate}</p>"
+      }
+    },
+    {
+      "_id": "pgRoad000000001",
+      "name": "The Old Road",
+      "type": "text",
+      "sort": 50,
+      "text": {"format": 1, "content": "<p>Rain and mud. Ahead: @UUID[.pgGate000000001]{the palisade gate}.</p>"}
+    },
+    {"_id": "pgMap0000000001", "name": "Map", "type": "image", "src": "maps/hall.webp"}
+  ],
+  "_stats": {"compendiumSource": "Compendium.dragonbane-test.adventures.JournalEntry.jrnRedTusk00001"}
+}

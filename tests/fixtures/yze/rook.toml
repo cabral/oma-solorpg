@@ -1,0 +1,15 @@
+name = "Rook"
+
+[attributes]
+strength = 3
+agility = 4
+wits = 3
+empathy = 2
+
+[skills]
+mobility = 2
+observation = 1
+
+[tracks]
+health = 3
+stress = { value = 1, max = 10 }

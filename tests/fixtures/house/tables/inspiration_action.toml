@@ -1,0 +1,25 @@
+# Test data.
+name = "Inspiration: action"
+formula = "1d20"
+results = [
+  { range = [1, 1], text = "Ask" },
+  { range = [2, 2], text = "Build" },
+  { range = [3, 3], text = "Carry" },
+  { range = [4, 4], text = "Climb" },
+  { range = [5, 5], text = "Dig" },
+  { range = [6, 6], text = "Escape" },
+  { range = [7, 7], text = "Feast" },
+  { range = [8, 8], text = "Forget" },
+  { range = [9, 9], text = "Hide" },
+  { range = [10, 10], text = "Judge" },
+  { range = [11, 11], text = "Keep" },
+  { range = [12, 12], text = "Listen" },
+  { range = [13, 13], text = "Mend" },
+  { range = [14, 14], text = "Open" },
+  { range = [15, 15], text = "Pray" },
+  { range = [16, 16], text = "Race" },
+  { range = [17, 17], text = "Sing" },
+  { range = [18, 18], text = "Test" },
+  { range = [19, 19], text = "Trick" },
+  { range = [20, 20], text = "Wait" },
+]

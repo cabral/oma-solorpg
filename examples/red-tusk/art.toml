@@ -1,0 +1,73 @@
+# The Red Tusk Hall's own figures (for the fight scene) and portraits (for the codex).
+# Keyed by NPC id. An NPC without one here gets the system pack's generic figure.
+
+[sprites.orc_leader]
+art = '''
+  \|/ \|/
+  (ò)_(ó)
+ /|##W##|\
+  _/   \_
+'''
+
+[sprites.cultist]
+art = '''
+    .-.
+   (o o)
+  /|~~~|\
+   /   \
+'''
+
+[sprites.priest]
+art = '''
+    /^\
+   ( ~ )
+  /|}+{|\
+  /_____\
+'''
+
+[sprites.tentacle]
+art = '''
+    .-.
+   (   )  ~
+    ) (  ~
+  ~(   )~~
+'''
+
+[portraits.orc_leader]
+art = '''
+    \|/          \|/
+     \\  .----.  //
+      \\/      \//
+      |  \    /  |
+      |  (ò)(ó)  |
+      |    <>    |
+     /| ,-v--v-, |\
+    | |(  ____  )| |
+    | ||| /  \ ||| |
+     \ \|______|/ /
+      '.________.'
+'''
+
+[portraits.priest]
+art = '''
+         .--.
+       .'    '.
+      /  .--.  \
+     |  /    \  |
+     | |  ~ ~ | |
+     | |   ^  | |
+     |  \ ~~ /  |
+     |   '--'   |
+    /|   /||\   |\
+   / |  / || \  | \
+'''
+
+[portraits.cultist]
+art = '''
+       .----.
+      / .--. \
+     | / o o\ |
+     | \  - / |
+      \ '--' /
+      /|~~~~|\
+'''

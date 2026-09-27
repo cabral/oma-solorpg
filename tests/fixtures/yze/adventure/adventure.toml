@@ -1,0 +1,5 @@
+title = "Test deck"
+
+[scenes.deck]
+title = "Cargo deck"
+text = "Crates, dripping pipes and a flickering light."

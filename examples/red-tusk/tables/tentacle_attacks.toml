@@ -1,0 +1,8 @@
+name = "Tentacle attacks"
+formula = "1d6"
+results = [
+  { range = [1, 2], text = "It lashes across the cave at you.", damage = "2d6" },
+  { range = [3, 4], text = "It wraps your legs and drags you toward the pool.", damage = "1d6" },
+  { range = [5, 5], text = "It slams down from above; there is no getting out of the way.", damage = "2d8", defend = false },
+  { range = [6, 6], text = "It sweeps the water and every torch goes out. You fight in the dark from now on." },
+]

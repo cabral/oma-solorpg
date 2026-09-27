@@ -1,0 +1,31 @@
+about = "The solo rules at the table, on the rules built from your book: questions the GM should answer with the oracle (the fortune chart in Dragonbane, the right column, tilted when one answer is likelier), a careful search of the gate (solo search), scavenging the mud (solo scavenge), and a Dragon or Demon's effect outside a fight."
+adventure = "red-tusk"
+character = "ragna"
+max_turns = 7
+setup = [["move", "gate"]]
+
+[player]
+mode = "scripted"
+lines = [
+  "Before I do anything: how many orcs do you think live up here? Are there more than those two guards?",
+  "I search the ground along the palisade carefully for anything hidden: a loose log, a way in, something buried.",
+  "There's a heap of rubbish by the gate. I dig through it to see if anything useful was thrown out.",
+  "How strong is that drumming? Does the whole warband sound awake?",
+  "I take whatever I found and look it over. What is it worth?",
+  "I go back to the gate and study the carved tusk.",
+]
+
+[[expect]]
+event = "fortune"
+why = "questions answered with the fortune chart"
+by_turn = 4
+
+[[expect]]
+event = "search"
+why = "a careful search: a stretch, then SPOT HIDDEN (solo search)"
+by_turn = 3
+
+[[expect]]
+event = "scavenge"
+why = "rummaging rolls the scavenge table"
+by_turn = 4

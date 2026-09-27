@@ -1,0 +1,85 @@
+# Dragonbane, as this VTT ships it: the names and nothing else.
+#
+# Free League's third-party license lets a supplement use Dragonbane's terminology, but not
+# carry a copy of its rules. So this pack holds the words the engine and the Book need
+# (attributes, conditions, skills, what the tracks are called) and none of the numbers,
+# tables or procedures. Those come from your own copy of the book:
+#
+#   make rules BOOK=~/Books/dragonbane-core.pdf SOLO_BOOK=~/Books/deepfall-breach.pdf
+#
+# builds ~/Games/solo/systems/dragonbane-rulebook over this pack, and
+# ~/Games/solo/systems/dragonbane over that (the solo rules, if you have that book). Until
+# they hold everything under `needs`, the engine won't start a campaign on this system.
+name = "Dragonbane"
+family = "d20-under"
+
+# What a campaign can't start without. Each is a key the pack built from your book must
+# hold (a dotted key reads into it: creation.choose is creation.toml's [choose] tables).
+needs = ["time", "push", "rest", "dying", "advancement", "combat", "weapons", "armor", "untrained", "creation.choose"]
+
+[attributes]
+str = "Strength"
+con = "Constitution"
+agl = "Agility"
+int = "Intelligence"
+wil = "Willpower"
+cha = "Charisma"
+
+# Which attribute each condition weighs on.
+[conditions]
+exhausted = "str"
+sickly = "con"
+dazed = "agl"
+angry = "int"
+scared = "wil"
+disheartened = "cha"
+
+[tracks]
+hp = "Hit points"
+wp = "Willpower points"
+
+# Where the Foundry Dragonbane system keeps a character's values, for
+# `solo import foundry character`. Paths are dotted keys inside the actor's system data.
+[foundry]
+attributes = "attributes.{key}.value"
+tracks = { hp = "hitPoints", wp = "willPoints" }
+conditions = "conditions.{attribute}.value"
+info = ["age"]
+info_items = ["kin", "profession"]
+gear_types = ["weapon", "armor", "helmet", "item"]
+
+[skills]
+acrobatics = "agl"
+awareness = "int"
+bartering = "cha"
+beast_lore = "int"
+bluffing = "cha"
+bushcraft = "int"
+crafting = "str"
+evade = "agl"
+healing = "int"
+hunting_fishing = { attribute = "agl", name = "Hunting & Fishing" }
+languages = "int"
+myths_legends = { attribute = "int", name = "Myths & Legends" }
+performance = "cha"
+persuasion = "cha"
+riding = "agl"
+seamanship = "int"
+sleight_of_hand = "agl"
+sneaking = "agl"
+spot_hidden = "int"
+swimming = "agl"
+axes = "str"
+bows = "agl"
+brawling = "str"
+crossbows = "agl"
+hammers = "str"
+knives = "agl"
+slings = "agl"
+spears = "str"
+staves = "agl"
+swords = "str"
+# Magic can't be tried untrained: only mages have their school's skill.
+animism = { attribute = "wil", untrained = false }
+elementalism = { attribute = "wil", untrained = false }
+mentalism = { attribute = "wil", untrained = false }

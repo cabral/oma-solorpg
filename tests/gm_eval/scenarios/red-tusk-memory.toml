@@ -1,0 +1,27 @@
+about = "Continuity over a lost session. At the gate the hero leaves small marks: bribes a guard, gives a false name, and promises to come back with more silver. The GM's session is dropped, and the hero walks back to the gate. Checks that the GM writes down what those deeds leave behind (the guard it invented, a hero fact, a promise, a consequence), that the fresh GM finds them again (the same name, the guard's mood, the debt), and that it answers a question about the past from the record instead of inventing a new answer. The judge should weigh continuity above all: a name or detail that changes between the two visits is a failure of state."
+adventure = "red-tusk"
+character = "ragna"
+max_turns = 9
+fresh_session_at = [6]
+setup = [["move", "gate"]]
+
+[player]
+mode = "scripted"
+lines = [
+  "I call up to the guards that I mean no harm and ask to speak with one of them.",
+  "I slip the guard three silver and tell him my name is Hilde, a trader from the valley. He saw nothing tonight.",
+  "I promise him three more silver when I come back down, if he keeps the gate quiet.",
+  "I walk back down the road for a while to see whether anyone follows me.",
+  "I come back up the hill to the gate.",
+  "I call up to the same guard. Does he remember me?",
+  "What name did I give him last time, and what did I promise him?",
+  "I pay him what I owe and ask to be let in.",
+]
+
+[[expect]]
+event = "consequence"
+why = "the bribe (or the debt) is written down as a consequence"
+
+[[expect]]
+event = "promise"
+why = "three more silver is recorded as a promise"

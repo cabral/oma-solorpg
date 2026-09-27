@@ -1,0 +1,12 @@
+# Hero names, one list per kin. These lists are this project's own; everything else a
+# hero is built from (the creation tables, professions, gear) is your book's and goes in
+# the creation.toml of the pack you build from it. A kin option there with no `names`
+# of its own draws from the list here with the same id.
+
+[names]
+human = ["Alva", "Bertil", "Corin", "Edda", "Folke", "Greta", "Holm", "Ingrid", "Ivar", "Maren"]
+halfling = ["Bramble", "Clover", "Dill", "Fennel", "Hazel", "Nettle", "Posy", "Tansy"]
+dwarf = ["Bodvar", "Dagna", "Fjalar", "Gunnhild", "Hrodi", "Sigrun", "Torvi", "Ulfar"]
+elf = ["Aelis", "Caelan", "Elowen", "Ilyra", "Saelith", "Vaelor", "Ysolde", "Merevin"]
+mallard = ["Drake", "Mudwick", "Pintail", "Quillon", "Reedy", "Scaup", "Teal", "Wigeon"]
+wolfkin = ["Ashka", "Ember", "Grau", "Kestrel", "Rime", "Skoll", "Varg", "Wren"]

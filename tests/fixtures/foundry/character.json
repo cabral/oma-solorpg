@@ -1,0 +1,28 @@
+{
+  "name": "Ragna",
+  "type": "character",
+  "system": {
+    "attributes": {
+      "str": {"base": 15, "value": 15}, "con": {"base": 14, "value": 14}, "agl": {"base": 10, "value": 10},
+      "int": {"base": 9, "value": 9}, "wil": {"base": 11, "value": 11}, "cha": {"base": 8, "value": 8}
+    },
+    "conditions": {
+      "str": {"value": false}, "con": {"value": false}, "agl": {"value": false},
+      "int": {"value": false}, "wil": {"value": true}, "cha": {"value": false}
+    },
+    "hitPoints": {"value": 12, "base": 14, "max": 14},
+    "willPoints": {"value": 11, "base": 11, "max": 11},
+    "kin": "",
+    "profession": "",
+    "age": "adult"
+  },
+  "items": [
+    {"name": "Sneaking", "type": "skill", "system": {"skillType": "core", "attribute": "agl", "value": 12}},
+    {"name": "Swords", "type": "skill", "system": {"skillType": "weapon", "attribute": "str", "value": 14}},
+    {"name": "Elementalism", "type": "skill", "system": {"skillType": "magic", "attribute": "none", "value": 7}},
+    {"name": "Broadsword", "type": "weapon", "system": {"damage": "2D6"}},
+    {"name": "Dwarf", "type": "kin", "system": {}},
+    {"name": "Fighter", "type": "profession", "system": {}}
+  ],
+  "prototypeToken": {}
+}

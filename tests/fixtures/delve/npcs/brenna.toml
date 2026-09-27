@@ -1,0 +1,7 @@
+name = "Brenna"
+role = "A miner of Hollowfell, the goblins' prisoner"
+faction = "miners"
+attitude = "neutral"
+template = "minion"
+attacker = "melee"
+wants = "To get home to her forge."

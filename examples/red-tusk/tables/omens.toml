@@ -1,0 +1,8 @@
+name = "Omens of the ritual"
+formula = "1d6"
+results = [
+  { range = [1, 2], text = "Every candle gutters at once, though there is no wind." },
+  { range = [3, 4], text = "A low chant rises from somewhere under your feet." },
+  { range = [5, 5], text = "Dark water seeps up between the floorboards and is gone a moment later." },
+  { range = [6, 6], text = "Every animal nearby falls silent." },
+]

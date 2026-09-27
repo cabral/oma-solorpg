@@ -1,0 +1,10 @@
+{
+  "name": "Omens",
+  "formula": "1D6",
+  "results": [
+    {"type": "text", "range": [4, 5], "text": "A chant rises."},
+    {"type": "text", "range": [1, 3], "description": "<p>Candles <strong>gutter</strong>.</p>", "name": ""},
+    {"type": "text", "range": [6, 6], "name": "Silence falls."}
+  ],
+  "_stats": {"compendiumSource": "Compendium.dragonbane-test.tables.RollTable.tblOmens0000001"}
+}

@@ -1,0 +1,6 @@
+name = "Tunnel goblin"
+role = "One of the goblins that took the mine"
+attitude = "hostile"
+many = true
+template = "minion"
+attacker = "melee"

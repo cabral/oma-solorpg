@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "cabral.oma-solorpg",
+  "name": "oma-solorpg",
+  "version": "0.3.0",
+  "author": "cabral",
+  "description": "A solo virtual tabletop for Omarchy, with your default agent as the game master. The Book tells the story: live narration, dice moments, scene title cards, a text portrait that reacts to your hero, fights drawn in text and a codex. The Table beside it holds the sheet, rolls, rests, light and the oracle, and the desktop joins in: border flashes, candlelight, omens.",
+  "keywords": [
+    "ttrpg",
+    "vtt",
+    "virtual tabletop",
+    "solo",
+    "dragonbane",
+    "game master",
+    "dice"
+  ],
+  "kinds": [
+    "panel",
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "panel": "Panel.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "oma-solorpg",
+    "description": "A d20 that opens the Table (right click: the Book); it shows the hero's state",
+    "category": "Games",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  },
+  "keepLoaded": true
+}

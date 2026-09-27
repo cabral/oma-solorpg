@@ -1,0 +1,17 @@
+{
+  "name": "Grukk Red Tusk",
+  "type": "npc",
+  "system": {
+    "description": "<p>A broad orc with a <em>split tusk</em>.</p>",
+    "movement": {"base": 10, "value": 10},
+    "hitPoints": {"value": 16, "base": 16, "max": 16},
+    "currency": {"gc": 3, "sc": 0, "cc": 0},
+    "traits": "Fearsome"
+  },
+  "items": [
+    {"_id": "itmAxes00000001", "name": "Axes", "type": "skill", "system": {"skillType": "weapon", "attribute": "str", "value": 14}},
+    {"_id": "itmAxe000000001", "name": "Battleaxe", "type": "weapon", "system": {"damage": "2D8", "grip": {"value": "grip2h"}}}
+  ],
+  "prototypeToken": {"name": "Grukk"},
+  "_stats": {"compendiumSource": "Compendium.dragonbane-test.actors.Actor.actGrukk000001"}
+}

@@ -1,0 +1,7 @@
+name = "Panic (placeholder)"
+formula = "1d6+@stress"
+results = [
+  { range = [1, 6], text = "Keeps it together." },
+  { range = [7, 9], text = "Shaken: loses the next action." },
+  { range = [10, 99], text = "Breaks and runs." },
+]

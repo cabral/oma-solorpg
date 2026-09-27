@@ -1,0 +1,11 @@
+# Test data.
+name = "Location: danger"
+formula = "1d6"
+results = [
+  { range = [1, 1], text = "A nest" },
+  { range = [2, 2], text = "Loose rock" },
+  { range = [3, 3], text = "Deep water" },
+  { range = [4, 4], text = "A sentry" },
+  { range = [5, 5], text = "Bad air" },
+  { range = [6, 6], text = "A snare" },
+]

@@ -1,0 +1,142 @@
+# Test data. It stands in for the pack a player builds from their own book and lays over
+# the bundled names (packs/dragonbane), so the tests run through the same layering play
+# does. Every text here is made up for the tests, the numbers are test values and the
+# lists are short: it is not the book, and it isn't meant to be played.
+extends = "../../../packs/dragonbane"
+
+untrained = [[6, 3], [10, 4], [14, 5], [18, 6]]
+
+[time]
+round = 10
+stretch = 900
+shift = 21600
+
+[push]
+cost = "condition"
+
+[rest.round]
+label = "Round rest"
+recover = { wp = "1d8" }
+time = { round = 1 }
+limit = "shift"
+
+[rest.stretch]
+label = "Stretch rest"
+recover = { hp = "1d8", wp = "1d8" }
+heal = 1
+time = { stretch = 1 }
+limit = "shift"
+tend = { skill = "healing", recover = { hp = "2d8" } }
+
+[rest.shift]
+label = "Shift rest"
+recover = { hp = "max", wp = "max" }
+heal = "all"
+time = { shift = 1 }
+
+[light.torch]
+label = "Torch"
+item = "torch"
+lasts = { shift = 1 }
+
+[dying]
+track = "hp"
+roll = "con"
+rally = 3
+die = 3
+recover = "1d8"
+self_rally = { skill = "persuasion" }
+self_save = { skill = "healing", recover = "1d8" }
+
+[advancement]
+mark_on = ["dragon", "demon"]
+roll = "1d20"
+max = 18
+
+[combat]
+initiative = 10
+dragon = "double"
+evade = "evade"
+track = "hp"
+unarmed = { label = "Unarmed", skill = "brawling", damage = "1d4", bonus = "str" }
+monster_parry = false
+
+[combat.damage_bonus]
+str = [[11, ""], [15, "1d4"], [18, "1d8"]]
+agl = [[11, ""], [15, "1d4"], [18, "1d8"]]
+
+[weapons]
+dagger = { skill = "knives", damage = "1d6", bonus = "agl" }
+short_sword = { skill = "swords", damage = "1d8", bonus = "str" }
+broadsword = { skill = "swords", damage = "2d6", bonus = "str" }
+spear = { skill = "spears", damage = "1d10", bonus = "str" }
+short_bow = { skill = "bows", damage = "1d8", bonus = "agl", parry = false }
+shield = { skill = "brawling", attack = false }
+
+[armor]
+leather_armor = 1
+chainmail = 3
+open_helmet = 1
+
+[oracle]
+chart = "fortune"
+scene_checks = false
+inspiration = ["inspiration_action", "inspiration_attribute", "inspiration_thing"]
+
+[oracle.fortune]
+bands = [[1, 1], [2, 3], [4, 5], [6, 6]]
+yes_no = ["No, and worse", "No", "Yes", "Yes, and more"]
+number = ["One or none", "A handful", "A crowd", "A horde"]
+scale = ["Tiny", "Middling", "Big", "Vast"]
+power = ["Feeble", "Modest", "Strong", "Overwhelming"]
+quality = ["Shoddy", "Plain", "Good", "Exquisite"]
+reaction = ["Hostile", "Guarded", "Curious", "Warm"]
+
+[effects]
+dragon = "dragon_effects"
+demon = "demon_effects"
+
+[threats]
+segments = 6
+start = 1
+advance = ["time:stretch"]
+table = "threats"
+
+[search]
+skill = "spot_hidden"
+table = "search"
+time = { stretch = 1 }
+
+[scavenge]
+table = "scavenge"
+again_time = { stretch = 1 }
+
+[npcs]
+attacks = "npc_attacks"
+attackers = ["melee", "ranged", "sneaky", "magic"]
+
+[npcs.templates.minion]
+attributes = 9
+movement = 10
+hp = 10
+armor = 0
+damage = "2d4"
+skill = 11
+other = 5
+
+[npcs.templates.boss]
+attributes = 13
+movement = 12
+hp = 22
+armor = 3
+damage = "2d6"
+skill = 14
+other = 7
+
+[abilities.army_of_one]
+name = "Army of One"
+initiative = 2
+
+[abilities.sole_survivor]
+name = "Sole Survivor"
+push = { wp = 3 }

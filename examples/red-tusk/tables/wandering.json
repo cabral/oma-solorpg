@@ -1,0 +1,9 @@
+{
+  "name": "Around the palisade",
+  "formula": "1d6",
+  "results": [
+    {"range": [1, 3], "text": "Nothing but rain."},
+    {"range": [4, 5], "text": "Two orc hunters drag a deer up the hill."},
+    {"range": [6, 6], "text": "A patrol of four orcs, arguing loudly."}
+  ]
+}

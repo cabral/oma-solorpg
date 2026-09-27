@@ -1,0 +1,7 @@
+{
+  "name": "Grukk",
+  "kind": "npc",
+  "description": "A broad orc with a split tusk and a voice like a rockslide.",
+  "stats": {"hp": 16, "armor": 2, "movement": 10},
+  "skills": {"axes": 14, "awareness": 10, "evade": 8}
+}

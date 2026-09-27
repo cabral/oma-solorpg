@@ -1,0 +1,34 @@
+# Ragna as the tests know the sheet: before the solo rules added a second heroic ability,
+# so the fixed dice of the older tests still line up.
+name = "Ragna"
+conditions = []
+items = ["broadsword", "shield", "torch", "rope", "4 field rations", "6 silver"]
+abilities = ["Unforgiving", "Veteran"]
+
+[info]
+kin = "Dwarf"
+profession = "Fighter"
+age = "Adult"
+
+[attributes]
+str = 15
+con = 14
+agl = 10
+int = 9
+wil = 11
+cha = 8
+
+[skills]
+awareness = 10
+evade = 10
+persuasion = 8
+swords = 14
+
+[tracks]
+hp = 14
+wp = 11
+
+[ratings]
+Movement = 8
+"Damage bonus (STR)" = "+D4"
+"Damage bonus (AGL)" = "none"

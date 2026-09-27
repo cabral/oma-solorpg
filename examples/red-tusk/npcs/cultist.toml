@@ -1,0 +1,17 @@
+name = "Cultist"
+role = "A villager who followed the priest below"
+attitude = "hostile"
+wants = "What the priest promised: that the drowned will come home."
+fears = "The orcs, and the thing in the pool."
+
+[stats]
+hp = 8
+armor = 0
+
+[skills]
+knives = 10
+
+[attack]
+label = "Dagger"
+skill = "knives"
+damage = "1d8"

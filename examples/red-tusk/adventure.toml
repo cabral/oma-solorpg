@@ -1,0 +1,90 @@
+# A tiny original adventure used by the tests and as a format reference.
+# An imported adventure has the same shape: scenes.json and npcs/*.json come from the
+# importer, and this file adds what the text only implies.
+title = "The Red Tusk Hall"
+system = "dragonbane"
+summary = "The orcs on the hill have grown bold, and the village wants to know why. A short adventure: one evening, one hall, one choice about the orcs."
+start = "road"
+# The oracle's chaos factor (1-9). Low: this is a short, written adventure, so scene
+# checks change about one scene in three. The GM moves it with commits as play goes.
+chaos = 3
+
+[factions.orcs]
+name = "Red Tusk orcs"
+standing = -1
+
+# Hidden from the player's panel. Advances every shift, when the alarm is raised,
+# and on a Demon; each tick rolls the omens table. `omen = true`: the clock stays hidden,
+# but what its ticks roll reaches the player (the Book, a desktop notification).
+# `stop`: the priest's death ends the ritual for good, so no more omens, and it never fills.
+[clocks.dark_ritual]
+label = "The ritual below"
+segments = 6
+hidden = true
+omen = true
+advance = ["time:shift", "fact:hall.alarm", "check:demon"]
+stop = ["npc:priest:dead"]
+on_tick = "omens"
+at_full = "ritual_completes"
+
+# Voices: the hero's skills speak up on entering a scene. Each is rolled quietly; only a
+# success reaches the player (and the GM, in `solo scene`). A clue can come with it.
+[scenes.road]
+title = "The Old Road"
+exits = { gate = "The palisade gate" }
+
+[scenes.gate]
+title = "The Palisade Gate"
+exits = { hall = "Into the hall", road = "Back down the road" }
+tables = ["wandering"]
+
+[[scenes.gate.voices]]
+skill = "spot_hidden"
+text = "That axe in the mud is small. Too small for a grown orc. Somebody young dropped it, and didn't stop to pick it up."
+
+[scenes.hall]
+title = "Chieftain's Hall"
+npcs = ["orc_leader"]
+exits = { cellar = "The cellar stairs", gate = "Out through the gate" }
+
+[[scenes.hall.voices]]
+skill = "awareness"
+text = "Grukk laughs too loud, and between laughs his eyes go to the floor behind the throne, as if something down there might be listening."
+
+[[scenes.hall.branches]]
+when = "fact.hall.alarm"
+text = "The warband is awake and armed. Grukk waits on his throne with a spear across his knees."
+
+[[scenes.hall.branches]]
+when = "not fact.hall.alarm"
+text = "Most of the warband sleeps off a feast. Only Grukk and two guards are awake."
+
+[scenes.cellar]
+title = "The Cellar"
+exits = { final_battle = "The ritual cave", hall = "Up to the hall" }
+dark = true
+
+[[scenes.cellar.voices]]
+skill = "spot_hidden"
+text = "Chalk on the edge of the crack, still wet: a spiral with an eye in it. Someone down there expects company."
+clue = "chalk_spiral"
+
+[scenes.final_battle]
+title = "The Ritual Cave"
+climax = true
+npcs = ["orc_leader", "priest", "cultist"]
+
+[[scenes.final_battle.voices]]
+skill = "myths_legends"
+text = "Those verses are a binding, the kind grandmothers warn about. A binding holds only while the one who sings it still breathes."
+
+[[scenes.final_battle.branches]]
+when = "npc.orc_leader.fate == 'alive' and promise.warband_joins == 'kept'"
+text = "Grukk and the Red Tusk warband charge in behind you, as he promised."
+
+[[scenes.final_battle.branches]]
+when = "npc.orc_leader.fate == 'dead'"
+text = "Without their chieftain the orcs went over to the priest. They stand with the cult."
+
+[scenes.ritual_completes]
+title = "The Ritual Completes"

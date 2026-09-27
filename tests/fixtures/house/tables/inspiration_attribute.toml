@@ -1,0 +1,25 @@
+# Test data.
+name = "Inspiration: attribute"
+formula = "1d20"
+results = [
+  { range = [1, 1], text = "Bitter" },
+  { range = [2, 2], text = "Bright" },
+  { range = [3, 3], text = "Broken" },
+  { range = [4, 4], text = "Cold" },
+  { range = [5, 5], text = "Crooked" },
+  { range = [6, 6], text = "Distant" },
+  { range = [7, 7], text = "Empty" },
+  { range = [8, 8], text = "Faded" },
+  { range = [9, 9], text = "Gentle" },
+  { range = [10, 10], text = "Heavy" },
+  { range = [11, 11], text = "Hollow" },
+  { range = [12, 12], text = "Loud" },
+  { range = [13, 13], text = "Narrow" },
+  { range = [14, 14], text = "Patient" },
+  { range = [15, 15], text = "Quick" },
+  { range = [16, 16], text = "Rotten" },
+  { range = [17, 17], text = "Sacred" },
+  { range = [18, 18], text = "Tangled" },
+  { range = [19, 19], text = "Warm" },
+  { range = [20, 20], text = "Wild" },
+]

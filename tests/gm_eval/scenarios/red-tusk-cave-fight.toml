@@ -1,0 +1,30 @@
+about = "The fight in the ritual cave: the priest and two cultists, a knife that calls on the Deep Mother, and possibly a tentacle from the pool. Checks the GM runs every foe's turn each round, offers evade, parry or take it, keeps death rolls honest, and closes the adventure when the fight settles."
+adventure = "red-tusk"
+character = "ragna"
+max_turns = 12
+setup = [["move", "gate"], ["move", "hall"], ["move", "cellar"], ["move", "final_battle"]]
+
+[player]
+mode = "scripted"
+lines = [
+  "I don't wait for him to finish. I charge the priest with my broadsword.",
+  "I hit him again.",
+  "I parry with my shield.",
+  "I swing at whoever is closest to the priest.",
+  "Evade!",
+  "At the priest, with everything I have.",
+  "I take it.",
+  "Again, the sword.",
+  "I parry.",
+  "Attack!",
+  "I look around the cave. Is it over?",
+]
+
+[[expect]]
+event = "fight"
+why = "the GM starts the fight with the engine"
+by_turn = 1
+
+[[expect]]
+when = "npc.priest.fate == 'dead' or pc.hp == 0 or pc.dead"
+why = "the fight comes to an end one way or the other"

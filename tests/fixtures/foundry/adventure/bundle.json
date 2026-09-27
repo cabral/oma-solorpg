@@ -1,0 +1,25 @@
+{
+  "_key": "!adventures!advBundle000001",
+  "name": "Bestiary bits",
+  "journal": [],
+  "actors": [
+    {
+      "_id": "actWolf00000001",
+      "name": "Dire Wolf",
+      "type": "monster",
+      "system": {
+        "armor": 1,
+        "ferocity": {"base": 2, "value": 2},
+        "size": "large",
+        "attackTable": "Compendium.dragonbane-test.tables.RollTable.tblWolf00000001",
+        "hitPoints": {"value": 18, "max": 18},
+        "movement": {"value": 16}
+      },
+      "items": [],
+      "prototypeToken": {}
+    }
+  ],
+  "tables": [
+    {"_id": "tblWolf00000001", "name": "Dire Wolf Attacks", "formula": "1d6", "results": [{"range": [1, 6], "text": "Bite"}]}
+  ]
+}

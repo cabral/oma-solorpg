@@ -1,0 +1,11 @@
+# Test data.
+name = "Search"
+formula = "1d10"
+results = [
+  { range = [1, 1], text = "Someone hides here, and you see them first" },
+  { range = [2, 2], text = "A tripwire across the floor" },
+  { range = [3, 3], text = "A draught from a crack: a way on ({value} turns of it)", roll = "1d4" },
+  { range = [4, 5], text = "A walled-up alcove" },
+  { range = [6, 8], text = "A loose stone with something behind it", then = "treasure" },
+  { range = [9, 10], text = "A hidden cache, and more to find", then = ["treasure", "treasure", "search"] },
+]

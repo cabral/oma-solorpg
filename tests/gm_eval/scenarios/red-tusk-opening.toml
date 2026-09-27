@@ -1,0 +1,32 @@
+about = "The Red Tusk Hall's opening: the road, then the palisade gate and its two guards. Checks the GM moves the hero before describing the gate, rolls SNEAKING to get past the guards unseen, raises the alarm on a failure, and keeps the priest and his ritual secret."
+adventure = "red-tusk"
+character = "ragna"
+max_turns = 5
+
+[player]
+mode = "scripted"
+lines = [
+  "I crouch by the boot prints and look them over. How many, and how fresh?",
+  "I follow the prints up the hill to the palisade.",
+  "I pick up the broken axe in the mud and look at it closely.",
+  "I wait for the guards to look the other way and try to slip past the gate unseen.",
+  "Whatever happened, I head for the big hall.",
+]
+
+[[expect]]
+when = "visited.gate"
+why = "the GM moved the hero to the gate"
+by_turn = 2
+
+[[expect]]
+event = "check"
+why = "getting past the guards is a SNEAKING roll"
+by_turn = 4
+
+[[forbid]]
+text = "Deep Mother"
+unless = "visited.final_battle"
+
+[[forbid]]
+text = "ritual"
+unless = "visited.cellar"

@@ -1,0 +1,10 @@
+# Rises from the pool on the second round of the fight if the ritual clock is at 4 or more.
+# A monster: it doesn't roll to hit, it rolls on its attack table.
+name = "Tentacle from the pool"
+role = "A limb of the Deep Mother's spawn"
+attitude = "hostile"
+attacks = "tentacle_attacks"
+
+[stats]
+hp = 12
+armor = 2

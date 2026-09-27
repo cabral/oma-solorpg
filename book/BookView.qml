@@ -1,0 +1,578 @@
+import QtQuick
+import QtQuick.Effects
+import QtQuick.Layouts
+import "Md.js" as Md
+
+// The Book: where the story is read and told. The GM's narration streams in as it is
+// written, every roll stops the page for a moment, scenes open with their name, and the
+// hero's face on the left follows what happens to them. The player writes at the bottom.
+//
+// Plain QtQuick on purpose: the window around it (BookWindow.qml) brings the shell, and
+// tests/qml renders this view offscreen against real engine state.
+Item {
+  id: book
+  property var theme
+  property var game: null          // state.json
+  property var turn: ({ status: "idle" })   // .solo/turn.json
+  property var agent: ({ agent: "", book: true })
+  property string campaign: ""     // the campaign's folder: another one starts the Book over
+  property string actionError: ""  // why the last thing clicked here (light a torch) was refused
+  property bool active: true       // the window is showing
+  property bool codexOpen: false
+  property bool epitaphDismissed: false
+  property int seen: -1            // the newest story seq already shown (no replays on load)
+  readonly property bool epitaphShown: dead && !epitaphDismissed
+
+  signal send(string text)
+  signal stop()
+  signal retry()
+  signal act(var args)             // an engine command for the table: ["light", "torch"]
+  signal openTable()
+  signal openTerminal()
+
+  // Blur, glow and particles need the GPU. Qt Quick's software renderer can't draw them,
+  // and would draw nothing where they are: without it every effect steps aside.
+  readonly property bool gpu: GraphicsInfo.api !== GraphicsInfo.Software
+  readonly property var pc: game ? game.pc : null
+  readonly property var story: game && game.story ? game.story : []
+  readonly property bool busy: turn && (turn.status === "thinking" || turn.status === "writing")
+  readonly property bool dead: pc !== null && pc.dead === true
+  readonly property bool carriesLight: pc !== null && pc.items.some(i => /(^|\s)torch(es)?$/i.test(i))
+  // The story column's width: a line of about 75 characters, however wide the window.
+  readonly property real measure: theme.prose * 38
+
+  onGameChanged: react()
+  onActiveChanged: if (active && game) titleCard.show(game.scene_title, game.title)
+  // Another campaign's story is numbered from its own start: what this one had seen means
+  // nothing there, and would hold back its dice and scene cards until it caught up.
+  onCampaignChanged: {
+    seen = -1
+    epitaphDismissed = false
+    codexOpen = false
+    storyModel.clear()
+    storyNewest = -1
+  }
+  // A new hero took up the story: the next death gets its gravestone too.
+  onDeadChanged: if (!dead) epitaphDismissed = false
+
+  // New story beats since the last look: a new scene gets its title card, a new roll its
+  // moment. The first load only remembers where the story is. It reads game.story, not
+  // the `story` binding, which hasn't caught up yet while gameChanged is being handled.
+  function react() {
+    if (!game) return
+    var beats = game.story || []
+    grow(beats)
+    var newest = beats.length ? beats[beats.length - 1].seq : 0
+    if (seen < 0) {
+      seen = newest
+      if (active) titleCard.show(game.scene_title, game.title)
+      return
+    }
+    var fresh = beats.filter(b => b.seq > seen)
+    seen = Math.max(seen, newest)
+    var scene = fresh.filter(b => b.kind === "scene").pop()
+    var roll = fresh.filter(b => b.kind === "roll" || b.kind === "voice").pop()
+    var hurt = fresh.some(b => b.kind === "hurt" && (b.dealt || 0) > 0)
+    if (scene) titleCard.show(scene.title, game.title)
+    else if (roll && roll.kind === "roll") {
+      // What the dice bring lands when they do (see dice.onSettled).
+      dice.show(roll)
+      hurtOnLanding = hurt
+      hurt = false
+    }
+    if (hurt) strike("hurt")
+    else if (!dice.visible && roll && roll.outcome && (roll.outcome.dragon || roll.outcome.demon))
+      strike(roll.outcome.dragon ? "dragon" : "demon")
+    if (fresh.length) storyView.follow()
+  }
+
+  // A blow that came with a roll waits for the dice to land.
+  property bool hurtOnLanding: false
+
+  function strike(kind) {
+    atmosphere.flash(kind)
+    if (kind !== "dragon") shake.restart()
+  }
+
+  // The story on the page grows a beat at a time: a reload of state.json adds what is new
+  // and leaves the rest alone, so the page is never rebuilt and nothing on it plays twice
+  // (an omen fading in). Newest first, for a list that runs bottom to top.
+  ListModel { id: storyModel }
+  property int storyNewest: -1
+
+  function grow(beats) {
+    var newest = beats.length ? beats[beats.length - 1].seq : -1
+    if (newest < storyNewest) {  // a story that doesn't carry on from this one: start over
+      storyModel.clear()
+      storyNewest = -1
+    }
+    for (var i = 0; i < beats.length; i++) {
+      if (beats[i].seq > storyNewest) {
+        storyModel.insert(0, { seq: beats[i].seq, json: JSON.stringify(beats[i]), opens: beats[i].kind === "gm" && opensScene(beats, i) })
+      }
+    }
+    while (storyModel.count > beats.length) storyModel.remove(storyModel.count - 1)
+    storyNewest = Math.max(storyNewest, newest)
+  }
+
+  // The GM's first words since the hero entered a scene (voices and rolls may come between).
+  function opensScene(beats, index) {
+    for (var i = index - 1; i >= 0; i--) {
+      if (beats[i].kind === "scene") return true
+      if (beats[i].kind === "gm" || beats[i].kind === "player") return false
+    }
+    return false
+  }
+
+  function elapsed(seconds) {
+    var day = Math.floor(seconds / 86400) + 1
+    var rest = seconds % 86400
+    var pad = n => (n < 10 ? "0" : "") + n
+    return "Day " + day + ", " + pad(Math.floor(rest / 3600)) + ":" + pad(Math.floor(rest % 3600 / 60))
+  }
+
+  Rectangle {
+    anchors.fill: parent
+    color: book.theme.background
+  }
+
+  component Link: Text {
+    id: link
+    signal clicked()
+    textFormat: Text.PlainText
+    font.family: book.theme.mono
+    font.pixelSize: book.theme.small
+    color: !enabled ? book.theme.faint : linkMouse.containsMouse ? book.theme.accent : book.theme.dim
+    MouseArea {
+      id: linkMouse
+      anchors.fill: parent
+      anchors.margins: -6
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: link.clicked()
+    }
+  }
+
+  // The page: the hero in the margin beside a column of text, centred in a wide window.
+  // Behind a moment (a roll, a new scene, the gravestone) it goes soft; in a dark place with
+  // nothing burning it dims; dying it loses its colour, and dead it is grey. A hit shakes it.
+  Item {
+    id: page
+    anchors.fill: parent
+    property real softness: book.gpu && (dice.visible || titleCard.visible || epitaphShown) ? 1 : 0
+    property real saturation: !book.gpu ? 0 : book.dead ? -1 : book.pc && book.pc.dying ? -0.55 : 0
+    property real brightness: book.gpu && book.game && book.game.dark && !book.game.light ? -0.18 : 0
+    Behavior on softness { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
+    Behavior on saturation { NumberAnimation { duration: 2500; easing.type: Easing.InOutQuad } }
+    Behavior on brightness { NumberAnimation { duration: 1800 } }
+    layer.enabled: book.gpu && (softness > 0.001 || saturation < -0.001 || brightness < -0.001)
+    layer.effect: MultiEffect {
+      blurEnabled: page.softness > 0
+      blur: page.softness * 0.55
+      blurMax: 32
+      saturation: page.saturation
+      brightness: page.brightness
+    }
+
+    SequentialAnimation {
+      id: shake
+      NumberAnimation { target: page; property: "x"; to: -9; duration: 40 }
+      NumberAnimation { target: page; property: "x"; to: 7; duration: 60 }
+      NumberAnimation { target: page; property: "x"; to: -4; duration: 60 }
+      NumberAnimation { target: page; property: "x"; to: 0; duration: 90 }
+    }
+
+    RowLayout {
+      id: pageRow
+      anchors { top: parent.top; bottom: parent.bottom; horizontalCenter: parent.horizontalCenter; margins: book.theme.body * 1.4 }
+      width: Math.min(book.width - book.theme.body * 2.8, (side.visible ? side.Layout.preferredWidth + spacing : 0) + book.measure)
+      spacing: book.theme.body * 2.4
+
+      // The hero ------------------------------------------------------------------------
+
+      Flickable {
+        id: side
+        Layout.fillHeight: true
+        Layout.preferredWidth: Math.max(sideColumn.implicitWidth, book.theme.small * 16)
+        contentHeight: sideColumn.implicitHeight
+        boundsBehavior: Flickable.StopAtBounds
+        clip: true
+        visible: book.pc !== null
+
+        Column {
+          id: sideColumn
+          spacing: book.theme.body * 0.7
+
+          Portrait {
+            theme: book.theme
+            portrait: book.game ? book.game.portrait : null
+            cell: book.theme.small
+          }
+
+          Text {
+            textFormat: Text.PlainText
+            font.family: book.theme.serif
+            font.pixelSize: book.theme.heading
+            color: book.theme.text
+            text: book.pc ? book.pc.name : ""
+          }
+
+          Text {
+            textFormat: Text.PlainText
+            font.family: book.theme.mono
+            font.pixelSize: book.theme.small
+            color: book.theme.dim
+            text: book.pc ? Object.keys(book.pc.info).map(k => book.pc.info[k]).join(" · ") : ""
+          }
+
+          Repeater {
+            model: book.pc ? Object.keys(book.pc.tracks) : []
+            delegate: Meter {
+              required property string modelData
+              theme: book.theme
+              label: modelData
+              value: book.pc.tracks[modelData].value
+              maximum: book.pc.tracks[modelData].max
+            }
+          }
+
+          Text {
+            visible: text !== ""
+            textFormat: Text.PlainText
+            font.family: book.theme.mono
+            font.pixelSize: book.theme.small
+            color: book.theme.urgent
+            text: book.pc ? (book.pc.dying ? "DYING · " + book.pc.dying.successes + " saved, " + book.pc.dying.failures + " lost\n" : "")
+              + book.pc.conditions.join(" · ") : ""
+          }
+
+          Torch {
+            theme: book.theme
+            gpu: book.gpu
+            light: book.game && book.game.light ? book.game.light : null
+            dark: book.game ? book.game.dark === true : false
+          }
+
+          Link {
+            visible: !!book.game && !book.game.light && book.carriesLight && !book.dead
+            text: "→ light a torch"
+            onClicked: book.act(["light", "torch"])
+          }
+
+          Text {
+            visible: book.actionError !== ""
+            width: side.width
+            wrapMode: Text.Wrap
+            textFormat: Text.PlainText
+            font.family: book.theme.mono
+            font.pixelSize: book.theme.small
+            color: book.theme.urgent
+            text: book.actionError
+          }
+
+          Item { width: 1; height: book.theme.body * 0.4 }
+
+          Text {
+            textFormat: Text.PlainText
+            font.family: book.theme.mono
+            font.pixelSize: book.theme.small
+            font.letterSpacing: 2
+            color: book.theme.dim
+            text: "THE WAY HERE"
+          }
+
+          Route {
+            theme: book.theme
+            steps: book.game && book.game.route ? book.game.route : []
+          }
+        }
+      }
+
+      // The story ------------------------------------------------------------------------
+
+      ColumnLayout {
+        Layout.fillWidth: true
+        Layout.fillHeight: true
+        spacing: book.theme.body * 0.8
+
+        RowLayout {
+          Layout.fillWidth: true
+          spacing: book.theme.body
+
+          Column {
+            Layout.fillWidth: true
+            Text {
+              width: parent.width
+              elide: Text.ElideRight
+              textFormat: Text.PlainText
+              font.family: book.theme.serif
+              font.pixelSize: book.theme.display
+              font.capitalization: Font.SmallCaps
+              color: book.theme.text
+              text: book.game ? book.game.scene_title || "" : "The Book"
+            }
+            Text {
+              textFormat: Text.PlainText
+              font.family: book.theme.mono
+              font.pixelSize: book.theme.small
+              color: book.theme.dim
+              text: book.game ? book.game.title + " · " + book.elapsed(book.game.time) : ""
+            }
+          }
+
+          Link { text: "codex"; onClicked: book.codexOpen = !book.codexOpen }
+          Link { text: "table"; onClicked: book.openTable() }
+          Link { text: "terminal"; onClicked: book.openTerminal() }
+        }
+
+        Tableau {
+          Layout.fillWidth: true
+          visible: !!book.game && !!book.game.combat
+          theme: book.theme
+          fight: book.game && book.game.combat ? book.game.combat : null
+          figures: book.game && book.game.figures ? book.game.figures : ({ hero: [], foes: {} })
+          hero: book.pc
+        }
+
+        Item {
+          Layout.fillWidth: true
+          Layout.fillHeight: true
+
+          ListView {
+            id: storyView
+            anchors.fill: parent
+            clip: true
+            spacing: 0
+            boundsBehavior: Flickable.StopAtBounds
+            // Newest at the bottom, like a page being written: the list runs bottom to top over
+            // the story reversed, and the GM's words in progress sit below the last beat.
+            verticalLayoutDirection: ListView.BottomToTop
+            model: storyModel
+            cacheBuffer: 4000
+            delegate: StoryEntry {
+              required property string json
+              required property bool opens
+              width: storyView.width - book.theme.body
+              theme: book.theme
+              beat: JSON.parse(json)
+              opensScene: opens
+            }
+            header: Column {
+              width: storyView.width - book.theme.body
+              onImplicitHeightChanged: storyView.follow()
+              spacing: book.theme.body * 0.5
+              topPadding: book.theme.body * 0.5
+
+              // The player's words, while the GM is answering them.
+              Text {
+                visible: book.busy && (book.turn.player || "") !== "" && !book.story.some(b => b.kind === "player" && b.text === book.turn.player)
+                width: parent.width
+                wrapMode: Text.Wrap
+                textFormat: Text.PlainText
+                font.family: book.theme.serif
+                font.italic: true
+                font.pixelSize: book.theme.prose * 0.95
+                color: book.theme.dim
+                text: book.turn.player || ""
+              }
+
+              // The GM writing: its words appear as they come, at a pace that reads like writing.
+              Text {
+                id: live
+                property int shown: 0
+                readonly property string full: book.busy ? (book.turn.text || "") : ""
+                visible: full !== ""
+                width: parent.width
+                textFormat: Text.RichText
+                wrapMode: Text.Wrap
+                color: book.theme.text
+                font.family: book.theme.serif
+                font.pixelSize: book.theme.prose
+                lineHeight: 1.3
+                text: Md.render(full.slice(0, shown), book.theme.mono, "") + (shown < full.length ? "<span style=\"color:" + book.theme.accent + "\">▌</span>" : "")
+                onFullChanged: if (full.length < shown) shown = 0
+                Timer {
+                  interval: 16
+                  repeat: true
+                  running: live.shown < live.full.length
+                  onTriggered: live.shown = Math.min(live.full.length, live.shown + Math.max(1, Math.ceil((live.full.length - live.shown) / 40)))
+                }
+              }
+
+              Text {
+                id: quill
+                property int dots: 0
+                visible: book.busy
+                textFormat: Text.PlainText
+                font.family: book.theme.mono
+                font.pixelSize: book.theme.small
+                color: book.theme.dim
+                text: "✒ the GM is " + (book.turn.doing || "thinking") + ".".repeat(dots + 1)
+                Timer { interval: 420; repeat: true; running: quill.visible; onTriggered: quill.dots = (quill.dots + 1) % 3 }
+              }
+
+              Row {
+                visible: book.turn.status === "error" || book.turn.status === "stopped"
+                spacing: book.theme.body
+                Text {
+                  textFormat: Text.PlainText
+                  font.family: book.theme.mono
+                  font.pixelSize: book.theme.small
+                  color: book.turn.status === "error" ? book.theme.urgent : book.theme.dim
+                  text: book.turn.status === "error" ? book.turn.error || "The GM ran into a problem." : "Stopped."
+                }
+                Link { text: "try again"; onClicked: book.retry() }
+              }
+            }
+
+            // A new beat brings the page back down to it, unless the player has scrolled far up to reread.
+            function follow() {
+              if (atYEnd || Math.abs(contentY - originY - contentHeight + height) < book.theme.body * 30) Qt.callLater(positionViewAtBeginning)
+            }
+          }
+
+          // A story taller than the page fades out under the heading instead of cutting a line in half.
+          Rectangle {
+            anchors { left: parent.left; right: parent.right; top: parent.top }
+            height: book.theme.prose * 1.6
+            visible: storyView.contentHeight > storyView.height
+            gradient: Gradient {
+              GradientStop { position: 0; color: book.theme.background }
+              GradientStop { position: 1; color: Qt.rgba(book.theme.background.r, book.theme.background.g, book.theme.background.b, 0) }
+            }
+          }
+        }
+
+        // Writing to the GM ------------------------------------------------------------------
+
+        Rectangle {
+          Layout.fillWidth: true
+          visible: book.agent.book !== false
+          implicitHeight: Math.min(input.implicitHeight, book.theme.prose * 8) + book.theme.body * 1.6
+          radius: book.theme.radius
+          color: book.theme.surface
+          border.width: 1
+          border.color: input.activeFocus ? book.theme.accent : book.theme.faint
+
+          RowLayout {
+            anchors.fill: parent
+            anchors.margins: book.theme.body * 0.8
+            spacing: book.theme.body
+
+            Flickable {
+              id: inputFlick
+              Layout.fillWidth: true
+              Layout.fillHeight: true
+              contentHeight: input.implicitHeight
+              clip: true
+              boundsBehavior: Flickable.StopAtBounds
+
+              TextEdit {
+                id: input
+                width: inputFlick.width
+                wrapMode: TextEdit.Wrap
+                textFormat: TextEdit.PlainText
+                font.family: book.theme.serif
+                font.pixelSize: book.theme.prose
+                color: book.theme.text
+                selectionColor: book.theme.accent
+                focus: true
+                Keys.onReturnPressed: event => {
+                  if (event.modifiers & Qt.ShiftModifier) event.accepted = false
+                  else { book.submit(); event.accepted = true }
+                }
+                Keys.onEnterPressed: event => { book.submit(); event.accepted = true }
+                Keys.onEscapePressed: book.codexOpen = false
+
+                Text {
+                  visible: input.text === "" && !input.activeFocus || input.text === "" && book.busy
+                  textFormat: Text.PlainText
+                  font: input.font
+                  color: book.theme.faint
+                  text: book.dead ? "An epilogue, if you want one…" : book.busy ? "The GM is writing…" : "What do you do?"
+                }
+              }
+            }
+
+            Link {
+              Layout.alignment: Qt.AlignBottom
+              text: book.busy ? "stop" : "send ↵"
+              enabled: book.busy || input.text.trim() !== ""
+              onClicked: book.busy ? book.stop() : book.submit()
+            }
+          }
+        }
+
+        Row {
+          visible: book.agent.book === false
+          spacing: book.theme.body
+          Text {
+            textFormat: Text.PlainText
+            font.family: book.theme.mono
+            font.pixelSize: book.theme.small
+            color: book.theme.dim
+            text: (book.agent.agent ? "Your GM (" + book.agent.agent + ")" : "Your GM") + " writes in its own window; the story shows here as it is recorded."
+          }
+          Link { text: "open the GM"; onClicked: book.openTerminal() }
+        }
+      }
+    }
+  }
+
+  Atmosphere {
+    id: atmosphere
+    anchors.fill: parent
+    theme: book.theme
+    game: book.game
+    heroX: pageRow.x + side.width / 2
+    heroY: pageRow.y + book.height * 0.3
+  }
+
+  function submit() {
+    var text = input.text.trim()
+    if (text !== "" && !busy) {
+      send(text)
+      input.text = ""
+    }
+  }
+
+  // Overlays ------------------------------------------------------------------------------
+
+  Codex {
+    anchors { top: parent.top; right: parent.right; bottom: parent.bottom; margins: book.theme.body }
+    width: Math.min(parent.width * 0.55, book.theme.body * 46)
+    visible: book.codexOpen
+    theme: book.theme
+    game: book.game
+    onClosed: book.codexOpen = false
+  }
+
+  Epitaph {
+    anchors.fill: parent
+    visible: book.epitaphShown
+    theme: book.theme
+    gpu: book.gpu
+    game: book.game
+    onDismissed: book.epitaphDismissed = true
+  }
+
+  TitleCard {
+    id: titleCard
+    objectName: "titleCard"
+    theme: book.theme
+    gpu: book.gpu
+  }
+
+  DiceMoment {
+    id: dice
+    objectName: "dice"
+    theme: book.theme
+    gpu: book.gpu
+    onSettled: outcome => {
+      if (book.hurtOnLanding) book.strike("hurt")
+      else if (outcome.dragon) book.strike("dragon")
+      else if (outcome.demon) book.strike("demon")
+      book.hurtOnLanding = false
+    }
+  }
+}

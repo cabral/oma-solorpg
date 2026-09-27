@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Anything built from a book belongs in ~/Games/solo, never here. These catch a pack
+# written into the repository by mistake.
+packs/*/rules/
+packs/*/skills.json
+packs/*/tables/
+packs/*/gear.toml
+packs/*/bestiary/
+packs/*/inventory.toml
+packs/*/inventory/
+examples/*/inventory.toml
+examples/*/inventory/
+*.pdf
+
+# GM play-test runs (tests/gm_eval): campaigns, traces and reports
+tests/gm_eval/runs/

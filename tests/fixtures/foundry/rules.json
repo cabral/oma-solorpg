@@ -1,0 +1,21 @@
+[
+  {
+    "name": "Core Rules",
+    "pages": [
+      {"_id": "pgPush000000001", "name": "Pushing Your Roll", "type": "text", "text": {"content": "<p>After a failed roll you may push it. See @DisplaySkill[Item.itmSneak0000001].</p>"}},
+      {"_id": "pgBoon000000001", "name": "Boons and Banes", "type": "text", "text": {"content": "<p>Roll an extra D20.</p>"}}
+    ]
+  },
+  {
+    "_id": "itmSneak0000001",
+    "name": "Sneaking",
+    "type": "skill",
+    "system": {"skillType": "core", "attribute": "agl", "value": 0, "itemDescription": "<p>Moving without being noticed.</p>", "gmDescription": "<p>Guards get a boon at night.</p>"}
+  },
+  {
+    "_id": "itmSeaman000001",
+    "name": "Seamanship",
+    "type": "skill",
+    "system": {"skillType": "core", "attribute": "int", "value": 0, "itemDescription": ""}
+  }
+]

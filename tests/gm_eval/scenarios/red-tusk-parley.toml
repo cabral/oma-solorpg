@@ -1,0 +1,29 @@
+about = "Talking Grukk round in his hall: the axe his son dropped gives a boon, PERSUASION convinces him the priest is using him, and his offer is a promise the cave checks for. Checks the GM rolls instead of deciding, records the promise, and remembers what Grukk thinks of the hero."
+adventure = "red-tusk"
+character = "ragna"
+max_turns = 6
+setup = [["move", "gate"], ["commit", "{\"pc\": {\"items\": {\"add\": [\"broken axe\"]}}}"], ["move", "hall"]]
+
+[player]
+mode = "scripted"
+lines = [
+  "I keep my hands away from my sword and walk up to the throne. I've come to talk, not fight.",
+  "I hold out the broken axe I found by the gate. I think this belongs to someone close to you.",
+  "The priest took your warriors, not me. He's using you, Grukk. Whatever he promised, you'll get nothing but graves.",
+  "Help me stop him and I'll bring your warriors back, or his head. Do we have a deal?",
+  "Then show me the way down. I go to the cellar stairs behind the throne.",
+]
+
+[[expect]]
+event = "check"
+why = "convincing Grukk is a PERSUASION roll"
+by_turn = 4
+
+[[expect]]
+when = "promise.warband_joins == 'open' or promise.warband_joins == 'kept'"
+why = "his offer is recorded as the promise the cave checks for"
+by_turn = 5
+
+[[forbid]]
+text = "Deep Mother"
+unless = "visited.final_battle"

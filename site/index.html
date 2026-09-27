@@ -1,0 +1,647 @@
+<!doctype html>
+<html lang="en" data-oma-theme="tokyo-night">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>oma-solorpg · your agent is the game master</title>
+<meta name="description" content="A solo virtual tabletop for Omarchy. Your coding agent is the game master; the dice, the rules and every word said at the table live in a small engine. Dragonbane, built from your own books.">
+<meta name="theme-color" content="#16161e">
+<meta property="og:type" content="website">
+<meta property="og:title" content="oma-solorpg · your agent is the game master">
+<meta property="og:description" content="A solo virtual tabletop for Omarchy. Claude Code or Codex runs the table; the dice are code; the desktop plays along.">
+<meta property="og:url" content="https://cabral.github.io/oma-solorpg/">
+<meta property="og:image" content="https://cabral.github.io/oma-solorpg/img/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="img/d20.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&display=swap">
+<link rel="stylesheet" href="style.css">
+<script>try { var t = localStorage.getItem("oma-theme"); if (t) document.documentElement.dataset.omaTheme = t } catch (e) {}</script>
+</head>
+<body>
+
+<a class="skip" href="#start">Skip to the page</a>
+
+<!-- The bar, the way Omarchy's waybar sits at the top of every desktop. The numbers are the
+     page's workspaces (press 1 to 8), and the d20 rolls. -->
+<header class="bar">
+  <div class="bar-left">
+    <a class="bar-mark" href="#start" aria-label="oma-solorpg, to the top">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 21 7v10l-9 5-9-5V7z"/><path d="M12 6.5 17.5 16h-11z"/></svg>
+    </a>
+    <nav class="workspaces" aria-label="Sections">
+      <a href="#start" data-ws="1" title="Start">1</a>
+      <a href="#trailer" data-ws="2" title="The trailer">2</a>
+      <a href="#book" data-ws="3" title="The Book">3</a>
+      <a href="#desktop" data-ws="4" title="The desktop joins in">4</a>
+      <a href="#rules" data-ws="5" title="The dice are code">5</a>
+      <a href="#books" data-ws="6" title="Bring your books">6</a>
+      <a href="#campaigns" data-ws="7" title="Campaigns">7</a>
+      <a href="#install" data-ws="8" title="Install">8</a>
+    </nav>
+  </div>
+  <div class="bar-center"><span class="clock" id="clock">&nbsp;</span></div>
+  <div class="bar-right">
+    <button class="bar-btn" id="theme-btn" type="button" title="Change the theme, like Omarchy does">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" class="fill"/></svg>
+      <span id="theme-name">Tokyo Night</span>
+    </button>
+    <button class="bar-btn" id="sound-btn" type="button" aria-pressed="true" title="Sound">
+      <svg class="icon on" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>
+      <svg class="icon off" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M17 9l5 6M22 9l-5 6"/></svg>
+      <span class="sr">Sound</span>
+    </button>
+    <a class="bar-btn" href="https://github.com/cabral/oma-solorpg" title="The repository">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 19c-4 1.5-4-2-6-2.5m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12 12 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21"/></svg>
+      <span class="hide-sm">github</span>
+    </a>
+    <button class="bar-btn bar-d20" id="bar-d20" type="button" title="Roll a d20 (the plugin's d20 lives in your bar)">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 21 7v10l-9 5-9-5V7z"/><path d="M12 6.5 17.5 16h-11z"/><path d="M12 2v4.5M21 7l-3.5 9M3 7l3.5 9M12 22l-5.5-6M12 22l5.5-6M3 7l9-.5M21 7l-9-.5"/></svg>
+      <span class="bar-roll" id="bar-roll" aria-live="polite"></span>
+    </button>
+  </div>
+</header>
+
+<main>
+
+<!-- 1 · Start ------------------------------------------------------------------------ -->
+<section id="start" class="ws" data-ws="1" aria-label="oma-solorpg">
+  <div class="tiles hero">
+    <article class="win book hero-book">
+      <nav class="book-links" aria-label="Jump to">
+        <a href="#book">codex</a><a href="#rules">table</a><a href="#install">terminal</a>
+      </nav>
+      <div class="titlecard">
+        <div class="rule" aria-hidden="true"><span></span><i>◆</i><span></span></div>
+        <h1 class="decrypt" data-text="Your agent is the game master">Your agent is the game master</h1>
+        <p class="card-sub">oma-solorpg, a solo virtual tabletop for Omarchy</p>
+        <div class="rule" aria-hidden="true"><span></span><i>◆</i><span></span></div>
+      </div>
+      <div class="page">
+        <p class="prose drop stream">You play a tabletop RPG alone, tonight, with no prep. Claude Code or Codex runs the game from behind a book of prose, and you answer it in words. A small engine owns the dice, the rules and every word said at the table, and the agent has to go through it for all of them. It plays Dragonbane, built from your own copy of the rules.</p>
+        <p class="player">I click the d20 in the bar.</p>
+        <p class="acts">
+          <a class="act primary" href="https://github.com/cabral/oma-solorpg">get it on GitHub</a>
+          <a class="act" href="#trailer">watch the trailer</a>
+          <a class="act" href="#install">install it tonight</a>
+        </p>
+        <p class="facts">an omarchy-shell plugin · standard-library Python 3.11 · no API keys · no network · MIT</p>
+      </div>
+    </article>
+
+    <figure class="win shot tall hero-table" data-caption="New adventure on the Table: every adventure in the library, a hero rolled from your book's creation tables, your lines and veils.">
+      <img src="img/table-new.webp" width="720" height="2126" alt="The Table's New adventure screen listing Alone in Deepfall Breach, The Red Tusk Hall and The Sinking Tower, with a random hero preview.">
+      <figcaption class="win-tag">the Table</figcaption>
+    </figure>
+
+    <div class="win face-win">
+      <pre class="portrait" data-hero="ragna" data-mood="calm" aria-label="Ragna's face, drawn in text"></pre>
+      <div class="sheet">
+        <p class="sheet-name">Ragna</p>
+        <p class="sheet-info">Adult · Dwarf · Fighter</p>
+        <p class="meter"><span>HP</span> <span class="bar-blocks" data-value="14" data-max="14"></span> <span class="num">14/14</span></p>
+        <p class="meter"><span>WP</span> <span class="bar-blocks" data-value="11" data-max="11"></span> <span class="num">11/11</span></p>
+        <p class="sheet-link"><a href="#book">→ roll her swords</a></p>
+      </div>
+    </div>
+
+    <div class="win term hero-term" data-replay>
+      <div class="term-body">
+        <p data-cmd>git clone https://github.com/cabral/oma-solorpg ~/Code/oma-solorpg</p>
+        <p data-cmd>make install</p>
+        <p class="out dim"># links solo, the GM skills and the plugin, and enables it</p>
+        <p data-cmd>make rules BOOK=~/Books/dragonbane-core.pdf</p>
+        <p class="out dim"># your agent opens with the solo-rules-import skill and reads the book a chapter at a time</p>
+        <p data-cmd>make check</p>
+        <p class="out ok">Everything is accounted for.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 2 · The trailer ------------------------------------------------------------------ -->
+<section id="trailer" class="ws" data-ws="2">
+  <header class="card-head">
+    <div class="rule" aria-hidden="true"><span></span><i>◆</i><span></span></div>
+    <h2 class="decrypt" data-text="The trailer">The trailer</h2>
+    <p class="card-sub">forty-five seconds of play, or fifteen</p>
+    <div class="rule" aria-hidden="true"><span></span><i>◆</i><span></span></div>
+  </header>
+  <div class="tiles">
+    <div class="win player-win">
+      <div class="tabs" role="tablist" aria-label="Trailer length">
+        <button role="tab" type="button" aria-selected="true" aria-controls="v45" id="t45">45 s</button>
+        <button role="tab" type="button" aria-selected="false" aria-controls="v15" id="t15">15 s</button>
+      </div>
+      <div class="video" id="v45" role="tabpanel" aria-labelledby="t45" data-file="media/oma-solorpg-45s.mp4">
+        <video controls playsinline preload="metadata" poster="img/red-title.webp">
+          <source src="media/oma-solorpg-45s.mp4" type="video/mp4">
+        </video>
+      </div>
+      <div class="video" id="v15" role="tabpanel" aria-labelledby="t15" data-file="media/oma-solorpg-15s.mp4" hidden>
+        <video controls playsinline preload="metadata" poster="img/tower-title.webp" loop>
+          <source src="media/oma-solorpg-15s.mp4" type="video/mp4">
+        </video>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 3 · The Book --------------------------------------------------------------------- -->
+<section id="book" class="ws" data-ws="3">
+  <header class="card-head">
+    <div class="rule" aria-hidden="true"><span></span><i>◆</i><span></span></div>
+    <h2 class="decrypt" data-text="The Book">The Book</h2>
+    <p class="card-sub">where the story is read and told</p>
+    <div class="rule" aria-hidden="true"><span></span><i>◆</i><span></span></div>
+  </header>
+
+  <div class="tiles book-tiles">
+    <article class="win book book-intro">
+      <p class="prose drop">A coding agent in a terminal prints its tool calls, permission prompts and JSON between the lines of your story. The Book takes the story out of the terminal. The agent runs headless behind it, its narration streams in as it writes, and what you read is prose.</p>
+      <ul class="beats">
+        <li>Every roll stops the page for a breath. A d20 tumbles, slows and lands; a Dragon glows gold, a Demon shakes red. Rolls you make on the Table and rolls the GM makes look the same.</li>
+        <li>A new scene opens with its name decrypting out of noise, between two rules that draw out from the middle.</li>
+        <li>Your hero's skills speak up. Entering a scene rolls each one quietly, and only a success reaches the margin: <span class="voice-inline">SPOT HIDDEN [5] SUCCESS</span>. You never learn what you missed.</li>
+        <li>The face on the left is drawn in text from kin and profession, and it follows the story: angry, scared, dazed, wounded, dying, dead. A Dragon earns a grin.</li>
+        <li>A torch burns down with game time, and dark places are dark.</li>
+        <li>The codex keeps everyone you've met, with a face each, and blanks out what they want, fear and hide until you find out.</li>
+        <li>Omens from hidden countdowns reach you as omens, never as numbers.</li>
+        <li>When your hero dies, the Book closes on a gravestone with your last words, and Home keeps them in the Hall of the Fallen.</li>
+      </ul>
+    </article>
+
+    <div class="gallery" data-gallery="red">
+      <figure class="win shot g-big" data-caption="A fight, drawn in text: initiative cards, the foes in order, the last blow between you. The Cultist is down; Grukk's axe just landed.">
+        <img src="img/red-fight.webp" width="1920" height="1290" loading="lazy" alt="The Book during a fight in Chieftain's Hall: Ragna's text portrait, a fight tableau with Grukk Red Tusk, and the story log.">
+        <figcaption class="win-tag">fight · Chieftain's Hall</figcaption>
+      </figure>
+      <figure class="win shot" data-caption="Entering a scene: its name decrypts out of noise, letter by letter, then settles into the Book's lettering.">
+        <img src="img/red-title-decrypting.webp" width="1920" height="1290" loading="lazy" alt="A scene title decrypting out of block characters.">
+        <figcaption class="win-tag">a scene opens</figcaption>
+      </figure>
+      <figure class="win shot" data-caption="A Dragon with a boon: two d20s, the one that counts lit gold.">
+        <img src="img/red-dragon.webp" width="1920" height="1290" loading="lazy" alt="The dice moment: two ASCII d20s showing 12 and 1, the 1 lit gold, and the word DRAGON.">
+        <figcaption class="win-tag">DRAGON</figcaption>
+      </figure>
+      <figure class="win shot" data-caption="The GM writing. Its words stream in as they're written; what it's doing shows underneath.">
+        <img src="img/red-writing.webp" width="1920" height="1290" loading="lazy" alt="The Book with the GM's reply streaming in.">
+        <figcaption class="win-tag">the GM writes</figcaption>
+      </figure>
+      <figure class="win shot" data-caption="The codex: everyone met, a face each, and what they want, fear and hide blanked out until the story tells you.">
+        <img src="img/red-codex.webp" width="1920" height="1290" loading="lazy" alt="The codex listing Grukk Red Tusk and a cultist with text portraits and blanked secrets.">
+        <figcaption class="win-tag">codex</figcaption>
+      </figure>
+      <figure class="win shot" data-caption="R.I.P. The face cut into the stone, where they fell and to whom, and the last words the player gave them.">
+        <img src="img/red-gravestone.webp" width="1920" height="1290" loading="lazy" alt="A text gravestone for Ragna: Fell in Chieftain's Hall, to Grukk Red Tusk. Not like this. Not in an orc's hall.">
+        <figcaption class="win-tag">the Hall of the Fallen</figcaption>
+      </figure>
+    </div>
+    <p class="note">Screens from The Red Tusk Hall, the adventure that ships with oma-solorpg. None of them is a mockup: the plugin's own QML, rendered offscreen against real engine state by the test harness in <code>tests/qml</code>. Click one to look closer.</p>
+
+    <div class="win dice-win" id="roller">
+      <div class="win-head">
+        <span class="win-title">roll it yourself</span>
+        <span class="dim">d20 under the skill · Dragon on 1 · Demon on 20</span>
+      </div>
+      <div class="roller">
+        <div class="roller-controls">
+          <div class="skills" role="radiogroup" aria-label="Skill">
+            <button type="button" class="chip" data-skill="Swords" data-target="14" aria-pressed="true">Swords 14</button>
+            <button type="button" class="chip" data-skill="Awareness" data-target="10" aria-pressed="false">Awareness 10</button>
+            <button type="button" class="chip" data-skill="Persuasion" data-target="8" aria-pressed="false">Persuasion 8</button>
+            <button type="button" class="chip" data-skill="Sneaking" data-target="5" aria-pressed="false">Sneaking 5</button>
+          </div>
+          <div class="steppers">
+            <span>Boons</span><button type="button" class="step" data-step="boons" data-by="-1" aria-label="One boon fewer">−</button><output id="boons">0</output><button type="button" class="step" data-step="boons" data-by="1" aria-label="One more boon">+</button>
+            <span>Banes</span><button type="button" class="step" data-step="banes" data-by="-1" aria-label="One bane fewer">−</button><output id="banes">0</output><button type="button" class="step" data-step="banes" data-by="1" aria-label="One more bane">+</button>
+          </div>
+          <button type="button" class="act primary roll-btn" id="roll-btn">Roll</button>
+          <div class="push" id="push" hidden>
+            <p class="dim">Failed. Push the roll: take a condition you don't have, and roll again.</p>
+            <div class="push-chips" id="push-chips"></div>
+          </div>
+          <button type="button" class="act small" id="rest-btn" hidden>Stretch rest: shake off a condition</button>
+          <p class="roll-log" id="roll-log" aria-live="polite"></p>
+        </div>
+        <div class="dice-stage" id="dice-stage">
+          <div class="dice-card" id="dice-card">
+            <p class="dice-label" id="dice-label">SWORDS</p>
+            <div class="dice-row" id="dice-row"></div>
+            <p class="dice-need" id="dice-need">needs 14 or less</p>
+            <p class="verdict" id="verdict">&nbsp;</p>
+            <span class="ring" id="ring"></span>
+          </div>
+          <div class="sparks" id="sparks" aria-hidden="true"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="win face-lab">
+      <div class="win-head">
+        <span class="win-title">a face that follows the story</span>
+        <span class="dim">drawn by <code>solo/portrait.py</code></span>
+      </div>
+      <div class="face-lab-body">
+        <pre class="portrait big" id="lab-face" data-hero="ragna" data-mood="calm" aria-live="polite"></pre>
+        <div class="face-lab-controls">
+          <p class="dim small">Kin and profession</p>
+          <div class="chips" id="lab-heroes">
+            <button type="button" class="chip" data-hero="ragna" aria-pressed="true">Dwarf fighter</button>
+            <button type="button" class="chip" data-hero="maren" aria-pressed="false">Human mage, old</button>
+            <button type="button" class="chip" data-hero="elowen" aria-pressed="false">Elf hunter</button>
+            <button type="button" class="chip" data-hero="varg" aria-pressed="false">Wolfkin knight</button>
+            <button type="button" class="chip" data-hero="quillon" aria-pressed="false">Mallard thief</button>
+            <button type="button" class="chip" data-hero="bramble" aria-pressed="false">Halfling bard</button>
+          </div>
+          <p class="dim small">What the story did to them</p>
+          <div class="chips" id="lab-moods">
+            <button type="button" class="chip" data-mood="calm" aria-pressed="true">calm</button>
+            <button type="button" class="chip" data-mood="triumph" aria-pressed="false">a Dragon</button>
+            <button type="button" class="chip" data-mood="angry" aria-pressed="false">angry</button>
+            <button type="button" class="chip" data-mood="scared" aria-pressed="false">scared</button>
+            <button type="button" class="chip" data-mood="dazed" aria-pressed="false">dazed</button>
+            <button type="button" class="chip" data-mood="exhausted" aria-pressed="false">exhausted</button>
+            <button type="button" class="chip" data-mood="hurt" aria-pressed="false">badly hurt</button>
+            <button type="button" class="chip" data-mood="dying" aria-pressed="false">dying</button>
+            <button type="button" class="chip" data-mood="dead" aria-pressed="false">dead</button>
+          </div>
+          <p class="small">A head per kin with slots for the eyes, brows, mouth, wounds and age, headgear per profession, a mood per condition. The Book colours each stroke by what it is, and the face blinks now and then.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 4 · The desktop ------------------------------------------------------------------ -->
+<section id="desktop" class="ws" data-ws="4">
+  <header class="card-head">
+    <div class="rule" aria-hidden="true"><span></span><i>◆</i><span></span></div>
+    <h2 class="decrypt" data-text="The desktop joins in">The desktop joins in</h2>
+    <p class="card-sub">your window borders, your screen, your notifications</p>
+    <div class="rule" aria-hidden="true"><span></span><i>◆</i><span></span></div>
+  </header>
+  <div class="tiles desk-tiles">
+    <div class="win mock" id="mock" aria-label="A small Omarchy desktop with the Book and the Table open">
+      <div class="mock-bar"><span>1 2 <b>3</b> 4</span><span id="mock-clock">Day 1, 00:15</span><span class="mock-d20">◆</span></div>
+      <div class="mock-tiles">
+        <div class="mock-win mock-book"><img src="img/breach-fight.webp" width="1920" height="1290" loading="lazy" alt="The Book in a fight at the Fiendish Altar."></div>
+        <div class="mock-win mock-table"><img src="img/table-breach.webp" width="720" height="2360" loading="lazy" alt="The Table during the same fight."></div>
+      </div>
+      <div class="mock-fx" aria-hidden="true"><span class="fx-flood"></span><span class="fx-tear"></span><span class="fx-rim"></span><span class="fx-ripple"></span><span class="fx-candle"></span></div>
+    </div>
+    <div class="win fx-panel">
+      <div class="win-head"><span class="win-title">solo desk</span><span class="dim">click one</span></div>
+      <div class="fx-list">
+        <button type="button" class="fx-btn gold" data-fx="dragon"><b>Dragon</b><span>The borders flash gold and gold light floods the screen. A chime.</span></button>
+        <button type="button" class="fx-btn red" data-fx="demon"><b>Demon</b><span>The borders turn red, the colour drains and the picture tears at its edges. A growl.</span></button>
+        <button type="button" class="fx-btn red" data-fx="hit"><b>A blow</b><span>The screen jolts.</span></button>
+        <button type="button" class="fx-btn red" data-fx="dying"><b>Dying</b><span>The borders stay dark red and a red rim closes in, further with every failed death roll. A heartbeat.</span></button>
+        <button type="button" class="fx-btn" data-fx="death"><b>Death</b><span>The screen goes grey and cold for a while, and a bell tolls.</span></button>
+        <button type="button" class="fx-btn" data-fx="omen"><b>Omen</b><span>The screen ripples and the omen arrives as a notification.</span></button>
+        <button type="button" class="fx-btn gold" data-fx="candle"><b>Candlelight</b><span>The screen warms while the Book is open.</span></button>
+        <button type="button" class="fx-btn" data-fx="drum"><b>A fight starts</b><span>A war drum.</span></button>
+        <button type="button" class="fx-btn quiet" data-fx="restore"><b>solo desk restore</b><span>Puts back exactly what it changed.</span></button>
+      </div>
+    </div>
+    <p class="note">On Omarchy these are Hyprland window borders, screen shaders and hyprsunset, timed to land with the Book's dice to the millisecond, and each can be switched off under Desktop effects on the Table. Here CSS stands in for them. The sounds are synthesised on the spot, the way the plugin makes its own with Python's standard library.</p>
+  </div>
+</section>
+
+<!-- 5 · The rules -------------------------------------------------------------------- -->
+<section id="rules" class="ws" data-ws="5">
+  <header class="card-head">
+    <div class="rule" aria-hidden="true"><span></span><i>◆</i><span></span></div>
+    <h2 class="decrypt" data-text="The dice are code">The dice are code</h2>
+    <p class="card-sub">the agent narrates, the engine decides</p>
+    <div class="rule" aria-hidden="true"><span></span><i>◆</i><span></span></div>
+  </header>
+  <div class="tiles rules-tiles">
+    <article class="win turn-win">
+      <div class="win-head"><span class="win-title">how a turn works</span></div>
+      <ol class="turn">
+        <li><span class="who">you</span><span>write to the GM at the bottom of the Book</span></li>
+        <li><span class="who">agent</span><span>picks one intent from what <code>solo scene</code> offers</span></li>
+        <li><span class="who eng">engine</span><span><code>solo check sneaking</code>: the dice and the rules, in code</span></li>
+        <li><span class="who">agent</span><span>reads the scene and proposes the consequence</span></li>
+        <li><span class="who eng">engine</span><span><code>solo commit '{"facts": …}'</code>: validated, logged, clocks advance</span></li>
+        <li><span class="who">agent</span><span>narrates what was committed</span></li>
+      </ol>
+      <p>Questions nobody rolls for go down a fixed ladder: the adventure's text first, then a skill check, then the oracle, which takes its odds from what the campaign tracks. The agent never picks the answer. Every change is an event in <code>events.jsonl</code>, and the state is rebuilt from it at any time.</p>
+      <p>Fights, dying and advancement are rules the engine runs: initiative cards, weapon damage through armor, death rolls at zero HP, and skills marked by Dragons and Demons and rolled up at the end of a session.</p>
+    </article>
+
+    <div class="win term" data-replay>
+      <div class="term-body">
+        <p data-cmd data-cwd="~/Games/solo/campaigns/red-tusk-ragna">solo check sneaking</p>
+        <pre class="out">{
+  "summary": "Sneaking: 16 vs 5, failure",
+  "push": {
+    "cost": "take a condition",
+    "choose_from": ["exhausted", "sickly", "dazed", "angry", "scared", "disheartened"]
+  },
+  …
+}</pre>
+        <p data-cmd>solo commit '{"note": "the horn sounds", "facts": {"hall.alarm": true}}'</p>
+        <pre class="out">{
+  "summary": "the horn sounds [for the GM: facts hall.alarm = true]",
+  "then": [
+    "The ritual below 1/6",
+    "Omens of the ritual (3): A low chant rises from somewhere under your feet."
+  ],
+  …
+}</pre>
+        <p data-cmd>solo ask "Is the gate barred from the inside?"</p>
+        <pre class="out">{ "summary": "asked \"Is the gate barred from the inside?\" (fortune, yes/no, rolled 2): No", … }</pre>
+      </div>
+      <p class="term-note">Real output from the engine, trimmed where it says …</p>
+    </div>
+
+    <article class="win solo-win">
+      <div class="win-head"><span class="win-title">playing alone, by the book</span></div>
+      <p>With Dragonbane's own solo rules built into your pack (they're in Alone in Deepfall Breach, in the core set), the engine runs the game the way the book means it to be played alone.</p>
+      <ul class="beats">
+        <li>Your hero starts with one more heroic ability. Army of One deals you two initiative cards in a fight; Sole Survivor lets you push a roll for willpower instead of a condition.</li>
+        <li>Questions a GM would answer go to the book's fortune chart: yes or no, how many, how big, how strong, how fine, or how someone reacts. Open questions get words to read.</li>
+        <li>Threats loom on a counter that climbs with every delay, and come for you when it fills.</li>
+        <li>You can search an area and scavenge a nest. Foes the adventure never wrote fight as minions or bosses.</li>
+        <li>At a rest you tend your own wounds. At zero HP you can rally yourself, or try to save your own life.</li>
+      </ul>
+      <p class="dim small">Without a solo rules book the oracle is the engine's own, a likelihood oracle that brings surprises: random events tied to the people and threads in play, and scenes that turn out altered, as often as a chaos factor says.</p>
+    </article>
+
+    <figure class="win shot tall rules-table" data-caption="The Table in a fight at Deepfall Breach: boons and banes, the last roll, the foes, the fortune chart's columns on the oracle, and the goblin scouts' threat at 2 of 6.">
+      <img src="img/table-breach.webp" width="720" height="2360" loading="lazy" alt="The Table: Ragna's sheet, a fight against two demon cultists, the oracle with the fortune chart, and a threat clock.">
+      <figcaption class="win-tag">the Table, mid-fight</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- 6 · Your books ------------------------------------------------------------------- -->
+<section id="books" class="ws" data-ws="6">
+  <header class="card-head">
+    <div class="rule" aria-hidden="true"><span></span><i>◆</i><span></span></div>
+    <h2 class="decrypt" data-text="Bring your books">Bring your books</h2>
+    <p class="card-sub">rules and adventures, read from PDFs you own</p>
+    <div class="rule" aria-hidden="true"><span></span><i>◆</i><span></span></div>
+  </header>
+  <div class="tiles books-tiles">
+    <article class="win book ingest-intro">
+      <p class="prose drop">oma-solorpg ships Dragonbane's words and none of its rules. Your agent reads your rulebook a chapter at a time and writes a pack the engine can run, every number citing the page it came from. The book never goes through a chat upload, however big it is, and nothing built from it lands in the repository.</p>
+      <ol class="steps">
+        <li><code>solo extract</code> turns the PDF into pages and chapters of text, with the running heads taken out and the printed page numbers read off the footers.</li>
+        <li>Any page that holds a roll table is also saved as a picture, because text extraction scrambles columns and the agent can look at the page instead. A page with no text on it is flagged as a scan.</li>
+        <li><code>solo inventory</code> starts a checklist: an item for every section and table, every page cited.</li>
+        <li>Your agent works through it with the <code>solo-rules-import</code> skill: attributes, creation tables, weapons and armor, fear and mishap tables, a bestiary, the price lists, a rules page per topic.</li>
+        <li><code>solo audit</code> fails on anything unaccounted for, either way, and on any table result, die, monster stat or price that isn't on the page it cites.</li>
+      </ol>
+      <p class="dim small"><code>make rules BOOK=… SOLO_BOOK=…</code> runs the mechanical steps and then opens your agent with the skill and a prompt. The pack lands in <code>~/Games/solo/systems</code>, laid over the names the repository ships.</p>
+    </article>
+
+    <div class="win term" data-replay>
+      <div class="term-body">
+        <p data-cmd data-cwd="~/Books">solo extract "Dragon Tests.pdf"</p>
+        <p class="out">wrote ~/Games/solo/sources/dragon-tests</p>
+        <p class="out">6 pages, 756 characters (about 189 tokens), 4 chapters from the outline, 1 table</p>
+        <p class="out">The PDF has no page labels: the printed page numbers were read off the footers (manifest.json, labels).</p>
+        <p data-cmd>solo inventory ~/Games/solo/systems/dragon-tests --extract ~/Games/solo/sources/dragon-tests</p>
+        <p class="out">wrote 5 files in ~/Games/solo/systems/dragon-tests: inventory.toml, inventory/01-front.toml, inventory/02-equipment.toml, inventory/03-travel.toml, inventory/04-monsters.toml</p>
+        <p class="out">Every page with text is cited by a todo item. Refine each chapter file, map every item, and run solo audit until it's clean.</p>
+        <p data-cmd>solo import table ~/Games/solo/sources/dragon-tests/pages/0005.txt --out ~/Games/solo/systems/dragon-tests/tables/weather.toml</p>
+        <p class="out">wrote ~/Games/solo/systems/dragon-tests/tables/weather.toml</p>
+        <p class="out dim"># the agent maps the rest, a chapter at a time</p>
+        <p data-cmd>solo audit --system dragon-tests</p>
+        <pre class="out"># Audit of dragon-tests against Dragon Tests
+
+5 items: 4 mapped, 1 skipped.
+The pack holds 9 things an item must claim.
+
+<b class="ok">Everything is accounted for.</b>
+
+## The book's pages
+5 of 5 pages with text are cited (Dragon Tests.pdf, 6 pages).
+
+## Mechanics only in rules pages (1)
+The GM reads these; the engine doesn't run them.
+- journeys: Journeys (p. 4)</pre>
+      </div>
+      <p class="term-note">Real output, on the six-page rulebook the test suite makes up for itself (<code>tests/test_rules_import.py</code>).</p>
+    </div>
+
+    <div class="win capture-win">
+      <div class="win-head"><span class="win-title">tables/p0005.png</span><span class="dim">captured by solo extract</span></div>
+      <div class="capture">
+        <img src="img/extract-table.webp" width="910" height="330" loading="lazy" alt="A captured PDF page: a weather table rolled on D6, with a running head and page number.">
+        <pre class="toml"><span class="k">name</span> = <span class="s">"Weather"</span>
+<span class="k">formula</span> = <span class="s">"1d6"</span>
+<span class="k">results</span> = [
+  { range = [1, 2], text = <span class="s">"Clear skies"</span> },
+  { range = [3, 4], text = <span class="s">"Rain, a bane on BUSHCRAFT"</span> },
+  { range = [5, 5], text = <span class="s">"Storm, no travel"</span> },
+  { range = [6, 6], text = <span class="s">"Fog, a bane on AWARENESS"</span> },
+]</pre>
+      </div>
+      <p class="small">The page as a picture for the agent to read, and the table <code>solo import table</code> made of it, dice worked out.</p>
+    </div>
+
+    <article class="win adv-win">
+      <div class="win-head"><span class="win-title">adventures, too</span></div>
+      <pre class="cmd-block"><code>make adventure ID=my-adventure PDF=~/Books/dragonbane-adventures.pdf
+make adventure ID=my-adventure FOUNDRY=~/Exports/my-adventure
+make check-adventure ID=my-adventure</code></pre>
+      <p>From a PDF, or from a Foundry VTT export (journals, actors and roll tables). The <code>solo-import</code> skill adds what the text only implies: factions, clocks, gates, branches, people with profiles and voices. It also says how to turn a published adventure's table rules into solo ones: a real-time limit becomes game time, pre-made replacement heroes wait for your death, a tournament's score is kept.</p>
+      <p><code>solo outline</code> shows the whole adventure on one page for review (spoilers), and <code>solo validate</code> points out scenes nobody can reach. The adventure then shows up on the New adventure screen.</p>
+    </article>
+  </div>
+
+  <header class="card-head sub">
+    <div class="rule" aria-hidden="true"><span></span><i>◆</i><span></span></div>
+    <h3 class="decrypt" data-text="From the author's shelf">From the author's shelf</h3>
+    <p class="card-sub">two of Free League's own adventures, compiled from the author's copies and played through the engine</p>
+    <div class="rule" aria-hidden="true"><span></span><i>◆</i><span></span></div>
+  </header>
+
+  <div class="tiles shelf">
+    <article class="win shelf-card" id="tower">
+      <div class="shelf-text">
+        <p class="shelf-kicker">the Dragonbane quickstart's tournament adventure</p>
+        <h4>The Sinking Tower</h4>
+        <p>Every twenty years a drowned sorcerer's tower rises from the sea for two hours, a green light burning at its top. Seven floors of puzzles and monsters, and a tide that won't wait.</p>
+        <ul class="beats small">
+          <li>The tournament's real-time limit became game time: every floor climbed takes a stretch, and when the hours run out the tower goes under a floor a round.</li>
+          <li>Each puzzle opens the way up. Until it's solved the stairs aren't there, for the GM or for you.</li>
+          <li>The monsters fight by the book: ferocity, attacks you can evade but not parry, a ghost only fire and magic can touch.</li>
+          <li>Die, and you carry on as one of the adventurers the tower is holding, with the same story around you.</li>
+        </ul>
+        <dl class="stats">
+          <div><dt>scenes</dt><dd>10</dd></div>
+          <div><dt>people &amp; monsters</dt><dd>10</dd></div>
+          <div><dt>monster attack tables</dt><dd>6</dd></div>
+          <div><dt>rules pages</dt><dd>6</dd></div>
+          <div><dt>heroes</dt><dd>3</dd></div>
+        </dl>
+        <p class="playtest"><span class="dim">Play-tested with a real GM, scored 1 to 5 by a third agent on rules, adventure, state, secrecy, narration and agency.</span> Archmaster Aodhan's full run went 33 turns across two dropped sessions with every clock, fact and condition intact: <b>5 5 5 5 4 4</b>. With the solo rules, Ragna took two turns a round and killed the eel, the first run anyone lived through.</p>
+      </div>
+      <div class="shelf-shots">
+        <figure class="shot" data-caption="The Statue Gallery, as the Book opens it."><img src="img/tower-title.webp" width="1920" height="1290" loading="lazy" alt="The title card: The Statue Gallery, The Sinking Tower."></figure>
+        <figure class="shot" data-caption="The Cellar, under the sea. Archmaster Aodhan is scared (a failed willpower roll), his staff lands a Dragon on the monster eel, and a quiet Awareness roll heard something in the silt."><img src="img/tower-fight.webp" width="1920" height="1290" loading="lazy" alt="The Book in The Cellar: Archmaster Aodhan fights a monster eel."></figure>
+        <figure class="shot" data-caption="The codex, with the one-eyed man's wants, fears and secrets still blanked."><img src="img/tower-codex.webp" width="1920" height="1290" loading="lazy" alt="The codex with the monster eel and the one-eyed man, his secrets blanked."></figure>
+        <figure class="shot" data-caption="A Dragon on Swimming, through the black water."><img src="img/tower-dragon.webp" width="1920" height="1290" loading="lazy" alt="A d20 landing on 1 for a Swimming roll: DRAGON."></figure>
+      </div>
+    </article>
+
+    <article class="win shelf-card" id="breach">
+      <div class="shelf-text">
+        <p class="shelf-kicker">the solo campaign in the Dragonbane core set</p>
+        <h4>Alone in Deepfall Breach</h4>
+        <p>A wound in the world, struck by a demon lord's spear, plunges leagues into the earth. An old wolfkin demon hunter watches over it from a ruined chapel, and he has work for you: five missions into the Breach, one after another.</p>
+        <ul class="beats small">
+          <li>Each mission is a path of waypoints. Some Ingolfr foresaw; some you discover as the exploration tables make them.</li>
+          <li>A threat closes in while you delve, and the solo rules' fortune chart answers what a GM would.</li>
+          <li>Between missions you rest, resupply in Outskirt and grow: advancement marks for every mission you bring home.</li>
+          <li>People you free, spare or cross remember it, and word reaches their kin.</li>
+        </ul>
+        <dl class="stats">
+          <div><dt>missions</dt><dd>5</dd></div>
+          <div><dt>waypoints</dt><dd>34</dd></div>
+          <div><dt>scenes</dt><dd>39</dd></div>
+          <div><dt>people &amp; monsters</dt><dd>15</dd></div>
+          <div><dt>rules pages</dt><dd>4</dd></div>
+        </dl>
+        <p class="playtest"><span class="dim">In a real GM run</span> the hero pocketed a smith's whetstone in Outskirt and told the tavern keeper about a sister lost in the Breach. Then the GM's session was dropped. The fresh one found it all again from the record, had the smith tell the store keeper while the hero was away, and, of its own accord, tied the lost sister to a ghost waiting in mission four.</p>
+      </div>
+      <div class="shelf-shots">
+        <figure class="shot" data-caption="The Vault of Many Paths, where every mission starts."><img src="img/breach-title.webp" width="1920" height="1290" loading="lazy" alt="The title card: The Vault of Many Paths, Alone in Deepfall Breach."></figure>
+        <figure class="shot" data-caption="The Fiendish Altar: Ragna's path through the Breach on the left, the fight in the middle, a search that found a hidden antechamber above it."><img src="img/breach-fight.webp" width="1920" height="1290" loading="lazy" alt="The Book at the Fiendish Altar: Ragna fights two demon cultists."></figure>
+        <figure class="shot" data-caption="The codex: a demon cultist, Gorum the captive, and Ingolfr Stone-Gaze, each with their own face."><img src="img/breach-codex.webp" width="1920" height="1290" loading="lazy" alt="The codex with a demon cultist, Gorum and Ingolfr Stone-Gaze."></figure>
+        <figure class="shot" data-caption="A Demon on Sneaking, with a bane: two d20s, the worse one counts."><img src="img/breach-demon.webp" width="1920" height="1290" loading="lazy" alt="Two d20s showing 7 and 20, the 20 lit red: DEMON."></figure>
+      </div>
+    </article>
+
+    <aside class="win credit">
+      <p><b>The Sinking Tower</b> and <b>Alone in Deepfall Breach</b> are Fria Ligan AB's. The author owns both books, and compiled these packs from them with the ingestion tools above; the screenshots are the engine playing those packs, rendered by the same harness as the rest of this page, with the GM's lines written for the occasion. The packs hold the books' text and tables, so they stay on the author's machine and are not in the repository. Build your own from the books you own.</p>
+    </aside>
+  </div>
+</section>
+
+<!-- 7 · Campaigns -------------------------------------------------------------------- -->
+<section id="campaigns" class="ws" data-ws="7">
+  <header class="card-head">
+    <div class="rule" aria-hidden="true"><span></span><i>◆</i><span></span></div>
+    <h2 class="decrypt" data-text="A long campaign">A long campaign</h2>
+    <p class="card-sub">the campaign remembers, so the GM doesn't have to</p>
+    <div class="rule" aria-hidden="true"><span></span><i>◆</i><span></span></div>
+  </header>
+  <div class="tiles camp-tiles">
+    <article class="win book camp-memory">
+      <p class="prose drop">A campaign can run for many sessions, and the GM may start any of them knowing nothing. The agent's session can be lost, compacted or replaced at any time, and the campaign holds the memory for it.</p>
+      <ul class="beats">
+        <li>What your hero does comes back. The GM writes down what will follow from a deed (the guard who took the bribe will brag, the cultist who fled will warn his master, the debt at the inn falls due in two days) and the engine tells it when the moment comes. You only see the world react.</li>
+        <li>People remember what you did to them, and word spreads to their kin. Someone the GM made up keeps their name, face, voice and wants from one session to the next.</li>
+        <li>A place you return to is the place you left: the forced gate still hangs open, and the GM is told how long you were away.</li>
+        <li>Before it brings anything back, the GM searches everything ever said at the table (<code>solo recall</code>), so a name it gave you three sessions ago stays the same name.</li>
+        <li>Close the Book whenever you like. It opens again exactly where you stopped, word for word.</li>
+      </ul>
+    </article>
+
+    <article class="win gen-win">
+      <div class="win-head"><span class="win-title">generate a campaign</span></div>
+      <p>When no book holds the story you want, pitch one. Give your agent a premise, a tone and a length, and it writes the campaign as a pack: a hub to come back to, missions as paths of waypoints, factions that want things, clocks and threats, people with faces, voices and secrets.</p>
+      <pre class="cmd-block"><code>make campaign ID=salt-and-ash TONE=grim MISSIONS=4 \
+  PREMISE="a smuggler's coast where the dead keep the lighthouses"</code></pre>
+      <p>Your system's own tables and the oracle roll the parts, so the dice have a say before you start. Missions after the first are written from what your hero actually did: the consequences they left open, the people who remember them. Then <code>solo validate</code> and <code>solo outline</code> check it like any imported adventure, and it waits on the New adventure screen.</p>
+    </article>
+
+    <article class="win heir-win">
+      <div class="win-head"><span class="win-title">heroes carry on</span></div>
+      <pre class="cmd-block"><code>solo new red-tusk --character ~/Games/solo/campaigns/sinking-tower-ragna</code></pre>
+      <p>A hero who lives through an adventure brings their story into the next one: how it ended, what was left open, who will remember them, and what you told the GM about them. A lost sister, an oath.</p>
+      <p class="dim small">And one who doesn't makes it into the Hall of the Fallen, with your last words.</p>
+    </article>
+  </div>
+</section>
+
+<!-- 8 · Install ---------------------------------------------------------------------- -->
+<section id="install" class="ws" data-ws="8">
+  <header class="card-head">
+    <div class="rule" aria-hidden="true"><span></span><i>◆</i><span></span></div>
+    <h2 class="decrypt" data-text="Tonight, then">Tonight, then</h2>
+    <p class="card-sub">five commands, then click the d20</p>
+    <div class="rule" aria-hidden="true"><span></span><i>◆</i><span></span></div>
+  </header>
+  <div class="tiles install-tiles">
+    <div class="win term install-term">
+      <div class="win-head"><span class="win-title">~</span><button type="button" class="copy" data-copy="install-cmds">copy</button></div>
+      <pre class="cmd-block big" id="install-cmds"><code>git clone https://github.com/cabral/oma-solorpg ~/Code/oma-solorpg && cd ~/Code/oma-solorpg
+make install
+uv pip install --system pymupdf
+make rules BOOK=~/Books/dragonbane-core.pdf SOLO_BOOK=~/Books/deepfall-breach.pdf
+make check</code></pre>
+      <p class="small"><code>make install</code> links <code>solo</code>, the GM skills and the plugin, and enables it. <code>make rules</code> extracts your books, sets up your private packs in <code>~/Games/solo/systems</code> and opens your agent to fill them. <code>make check</code> audits them against the books. <code>AGENT=codex make rules …</code> picks the agent; the default is Omarchy's.</p>
+    </div>
+
+    <article class="win need-win">
+      <div class="win-head"><span class="win-title">you need</span></div>
+      <ul class="need">
+        <li><a href="https://omarchy.org">Omarchy</a>, <code>make</code> and Python 3.11 or newer</li>
+        <li>Claude Code or Codex, the agent Omarchy runs for you</li>
+        <li>A PDF of the Dragonbane core rules</li>
+        <li>Optional: the solo rules, Alone in Deepfall Breach from the core set</li>
+      </ul>
+      <p class="small">Then, with clicks only: the d20 in the bar opens the Table. New adventure, pick The Red Tusk Hall (it comes with it) and a hero, Begin. The Book opens beside the Table and the GM writes the opening scene.</p>
+      <p class="small dim">Other agents open in a terminal (<code>solo play --terminal</code>), and the Book still shows the story as it is recorded.</p>
+    </article>
+
+    <article class="win road-win">
+      <div class="win-head"><span class="win-title">roadmap</span><a class="dim" href="https://github.com/cabral/oma-solorpg/blob/main/ROADMAP.md">ROADMAP.md</a></div>
+      <ul class="road">
+        <li><span class="tag">next</span> The mechanics your book has and the engine doesn't yet: spells and willpower, weapons that break on a parry, ranged attacks and their ranges, monster traits, encumbrance, journeys rolled by the engine.</li>
+        <li><span class="tag">next</span> Campaign generation from a premise, missions written from what your hero did.</li>
+        <li><span class="tag">later</span> A third mechanics family, percentile or d20-over, beside Dragonbane's d20-under and the dice pool.</li>
+        <li><span class="tag">later</span> More games on the dice-pool family, more agents that stream into the Book, the importer on the Table.</li>
+      </ul>
+    </article>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="foot-grid">
+    <div class="foot-legal">
+      <a class="license-logo" href="https://freeleaguepublishing.com/community-content/free-tabletop-licenses/"><img src="img/a-supplement-for-dragonbane.png" width="1191" height="306" alt="A Supplement for Dragonbane"></a>
+      <p><i>This game is not affiliated with, sponsored, or endorsed by Fria Ligan AB. This Supplement was created under Fria Ligan AB's Dragonbane Third Party Supplement License.</i></p>
+      <p>oma-solorpg is a third-party supplement for Dragonbane, published as a virtual tabletop module under Free League's Dragonbane Third-Party Tabletop Module License. You need the Dragonbane core game to play it. The repository holds none of Free League's text, tables, rules or art: every rule it runs is built by each player from their own copy of the books.</p>
+    </div>
+    <div class="foot-ai">
+      <p><b>Generative AI.</b> The game master is a generative AI: your agent writes the story as you play. Much of this project was also written with an AI coding agent, including its code, the text of The Red Tusk Hall, the hero names, the text-drawn art and this page.</p>
+      <p>The code and the project's own content (The Red Tusk Hall, Ragna, the name lists, the portraits) are under the MIT License. Made for <a href="https://omarchy.org">Omarchy</a> by <a href="https://github.com/cabral">cabral</a>.</p>
+      <p class="foot-last"><a href="https://github.com/cabral/oma-solorpg">github.com/cabral/oma-solorpg</a><span class="foot-d20" title="Some doors only open for those who remember the old codes.">◆</span></p>
+    </div>
+  </div>
+</footer>
+
+<!-- Page-wide desktop effects: the same moments as the mock desktop, over everything. -->
+<div class="page-fx" aria-hidden="true"><span class="fx-flood"></span><span class="fx-rim"></span></div>
+<div class="notify" id="notify" role="status" aria-live="polite"></div>
+
+<dialog class="walker" id="walker" aria-label="Theme">
+  <form method="dialog" class="walker-box">
+    <input id="walker-q" type="text" placeholder="Theme…" autocomplete="off" aria-label="Filter themes">
+    <ul id="walker-list" role="listbox" aria-label="Themes"></ul>
+    <p class="walker-hint">↑ ↓ to choose · enter · esc</p>
+  </form>
+</dialog>
+
+<dialog class="lightbox" id="lightbox" aria-label="Screenshot">
+  <form method="dialog"><button class="lb-close" aria-label="Close">×</button></form>
+  <button type="button" class="lb-nav prev" id="lb-prev" aria-label="Previous">‹</button>
+  <figure><img id="lb-img" alt=""><figcaption id="lb-cap"></figcaption></figure>
+  <button type="button" class="lb-nav next" id="lb-next" aria-label="Next">›</button>
+</dialog>
+
+<script src="art.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

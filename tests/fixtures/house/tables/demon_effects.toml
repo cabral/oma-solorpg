@@ -1,0 +1,11 @@
+# Test data.
+name = "Demon effect"
+formula = "1d6"
+results = [
+  { range = [1, 1], text = "Something you carry breaks" },
+  { range = [2, 2], text = "It takes far too long" },
+  { range = [3, 3], text = "Someone noticed" },
+  { range = [4, 4], text = "You walk into worse" },
+  { range = [5, 5], text = "Something reacts badly" },
+  { range = [6, 6], text = "You hurt yourself doing it" },
+]

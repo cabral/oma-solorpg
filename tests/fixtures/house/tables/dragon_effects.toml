@@ -1,0 +1,11 @@
+# Test data.
+name = "Dragon effect"
+formula = "1d6"
+results = [
+  { range = [1, 1], text = "You find something you can use" },
+  { range = [2, 2], text = "It's done in half the time" },
+  { range = [3, 3], text = "Someone saw, and is impressed" },
+  { range = [4, 4], text = "You spot a way forward nobody else did" },
+  { range = [5, 5], text = "Luck adds a second good thing" },
+  { range = [6, 6], text = "It works better than it had any right to" },
+]

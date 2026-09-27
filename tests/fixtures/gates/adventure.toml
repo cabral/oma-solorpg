@@ -1,0 +1,46 @@
+# A small adventure for the engine's gates, travel time and clock stages.
+title = "Gates"
+system = "dragonbane"
+start = "hall"
+chaos = 3
+scene_checks = false
+move_time = { stretch = 1 }
+
+[clocks.hours]
+label = "The hours"
+segments = 4
+advance = ["time:stretch"]
+
+[[clocks.hours.stages]]
+at = 2
+text = "The floor shakes."
+note = "The hall floods: it can't be entered any more."
+facts = { hall.flooded = true }
+
+[[clocks.hours.stages]]
+at = 4
+note = "The tower goes under."
+facts = { tower.sinking = true }
+
+[clocks.collapse]
+label = "Going under"
+segments = 3
+hidden = true
+advance = ["time:round", "fact:tower.sinking"]
+while = "fact.tower.sinking"
+
+[[clocks.collapse.stages]]
+at = 1
+facts = { hall.gone = true }
+
+[scenes.hall]
+title = "The Hall"
+exits = { stairs = { label = "Stairs that unfold from the ceiling", when = "fact.hall.stairs_open" }, well = { label = "Down the well", time = { shift = 1 } } }
+
+[scenes.stairs]
+title = "The Stairs"
+exits = { hall = { label = "Back down", when = "not fact.hall.flooded" } }
+
+[scenes.well]
+title = "The Well"
+exits = { hall = "Climb back up" }
