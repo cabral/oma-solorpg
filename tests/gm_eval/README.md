@@ -44,6 +44,12 @@ max_turns = 8
 setup = [["move", "gate"]]         # solo commands run before the GM opens (start partway in)
 fresh_session_at = [5]             # drop the agent's session before these turns: a new one must resume from the campaign
 
+# [generate]                       # or play a campaign rolled for the run (make campaign's dice, no agent write-up):
+# premise = "..."                  # rolled into the run's home under `adventure`, drafts published
+# tone = "grim"
+# missions = 3
+# seed = 11                        # the same seed rolls the same campaign every run
+
 [player]
 mode = "scripted"                  # the lines, in order
 lines = ["I look at the carved tusk on the gate.", "..."]

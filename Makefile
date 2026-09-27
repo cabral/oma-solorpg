@@ -20,7 +20,7 @@ TOP        := $(SYSTEMS)/dragonbane
 SOLO_TASK    = The solo rules are extracted in $(SOURCES)/dragonbane-solo and go into $(TOP) (it extends dragonbane-rulebook), whose inventory is started too.
 NO_SOLO_TASK = I have no solo rules book: leave $(TOP) as it is.
 
-.PHONY: help install deps rules check adventure check-adventure test qml-check site
+.PHONY: help install deps rules check adventure check-adventure campaign campaign-next test qml-check site
 
 help:
 	@echo "oma-solorpg"
@@ -31,6 +31,9 @@ help:
 	@echo "  make adventure ID=<id> PDF=<pdf>     start an adventure pack from a PDF you own"
 	@echo "  make adventure ID=<id> FOUNDRY=<dir> start one from a Foundry VTT export"
 	@echo "  make check-adventure ID=<id>         validate an adventure, show its outline, audit it"
+	@echo "  make campaign ID=<id> PREMISE=\"...\" [TONE=grim] [MISSIONS=3] [SEED=n]"
+	@echo "                                       roll a campaign from a premise and have your agent write it"
+	@echo "  make campaign-next CAMPAIGN=<folder> roll a generated campaign's next mission from what the hero did"
 	@echo "  make test                            the engine's tests"
 	@echo "  make qml-check                       load the plugin's QML offscreen (needs PySide6)"
 	@echo "  make site                            serve the website (site/) on http://localhost:8000"
@@ -94,6 +97,21 @@ check-adventure:
 	$(SOLO_BIN) validate --adventure "$(ID)"
 	$(SOLO_BIN) outline --adventure "$(ID)"
 	@if [ -f "$(ADVENTURES)/$(ID)/inventory.toml" ]; then $(SOLO_BIN) audit --adventure "$(ID)"; fi
+	@if [ -f "$(ADVENTURES)/$(ID)/premise.toml" ] || [ -f "$(ID)/premise.toml" ]; then $(SOLO_BIN) campaign check "$(ID)"; fi
+
+# A campaign from a premise: the engine rolls its bones (the hub, the factions, the first
+# mission's waypoints, each roll recorded), then your agent writes it with the solo-campaign skill.
+campaign:
+	@test -n "$(ID)" -a -n "$(PREMISE)" || { echo 'usage: make campaign ID=<id> PREMISE="a sentence" [TONE=grim] [MISSIONS=3] [SYSTEM=dragonbane] [SEED=n]'; exit 2; }
+	$(SOLO_BIN) campaign new "$(ID)" --premise "$(PREMISE)" --tone "$(TONE)" --missions $(or $(MISSIONS),3) --system $(or $(SYSTEM),dragonbane) $(if $(SEED),--seed $(SEED))
+	@$(ASK) "$(SOLO_HOME)" "Use the solo-campaign skill to write the campaign just rolled in $(ADVENTURES)/$(ID) from my premise: $(PREMISE). The repository is $(CURDIR): read docs/PACK_FORMAT.md there first. Keep to what the dice rolled (rolls.toml), write every file marked rolled, not yet written, and run make check-adventure ID=$(ID) in the repository until it is clean. Then tell me about the campaign without spoiling it."
+
+# The next mission of a generated campaign, once the one before is done: rolled from what the
+# hero did, then written by your agent.
+campaign-next:
+	@test -n "$(CAMPAIGN)" || { echo "usage: make campaign-next CAMPAIGN=<campaign folder>"; exit 2; }
+	$(SOLO_BIN) campaign next "$(CAMPAIGN)"
+	@$(ASK) "$(SOLO_HOME)" "Use the solo-campaign skill to write the next mission of the campaign in $(CAMPAIGN): solo campaign next has just rolled it into the campaign's adventure pack (campaign.toml there says where). The repository is $(CURDIR): read docs/PACK_FORMAT.md there first. Read what the hero did (solo -C $(CAMPAIGN) history), pay off what the dice picked to come back, and run make check-adventure ID=<the adventure folder> in the repository until it is clean."
 
 test:
 	python3 -m unittest discover -s tests

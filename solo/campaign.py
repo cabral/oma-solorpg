@@ -81,7 +81,7 @@ def create(root, system_path, adventure_path, character, title=None, prefs=None)
     player's table settings (tone, lines, veils). Refuses a folder that already holds a campaign."""
     root = Path(root).resolve()
     system = packs.load_system(system_path)
-    adventure = packs.load_adventure(adventure_path)
+    adventure = packs.load_adventure(adventure_path, drafts=False)
     problems = packs.validate(system, adventure)
     if (root / "campaign.toml").exists():
         raise SoloError(f"{root} already holds a campaign")
@@ -239,7 +239,7 @@ class Campaign:
         self.root = Path(root)
         self.config = packs.load_data(self.root / "campaign.toml")
         self.system = packs.load_system(_pack(self.root, self.config["system"], library.find_system))
-        self.adventure = packs.with_system(self.system, packs.load_adventure(_pack(self.root, self.config["adventure"], library.find_adventure)))
+        self.adventure = packs.with_system(self.system, packs.load_adventure(_pack(self.root, self.config["adventure"], library.find_adventure), drafts=False))
         if self.adventure.get("weapons"):
             self.system["weapons"] = {**self.system.get("weapons", {}), **self.adventure["weapons"]}
         self.events = _read_events(self.root / "events.jsonl")
@@ -2415,6 +2415,10 @@ def ready(adventure, state, consequence):
 def _apply_changes(state, changes, event):
     state["facts"].update(changes.get("facts", {}))
     for npc_id, change in changes.get("npc", {}).items():
+        if change.get("new") and npc_id in state["npcs"] and "location" not in change:
+            # Someone the GM made up in play whom the pack has written down since (a generated
+            # campaign's next mission brings them back): met here, as when the GM made them up.
+            state["npcs"][npc_id]["location"] = state["scene"]
         npc = state["npcs"].setdefault(npc_id, {
             "name": change.get("name", npc_id), "faction": None, "fate": "alive", "attitude": 0,
             "location": state["scene"], "met": True, "memories": [],

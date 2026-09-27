@@ -100,6 +100,10 @@ def listing():
         except SoloError as error:
             problems.append(f"adventure {path.name}: {error}")
             continue
+        if spec.get("draft"):
+            # A campaign an agent is still writing (make campaign): not ready to begin.
+            problems.append(f"adventure {path.name}: still being written (draft = true in adventure.toml)")
+            continue
         adventures.append({
             "id": path.name,
             "title": spec.get("title", path.name),

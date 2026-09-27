@@ -71,6 +71,22 @@ class Checks(CampaignTest):
         self.assertEqual((self.tmp / "run" / "home" / "systems" / "dragonbane").resolve(), DRAGONBANE.resolve())
 
 
+class Generated(CampaignTest):
+    def test_a_scenario_can_play_a_campaign_rolled_for_it(self):
+        own = self.tmp / "own"
+        (own / "systems").mkdir(parents=True)
+        (own / "systems" / "dragonbane").symlink_to(DRAGONBANE, target_is_directory=True)
+        scenario = harness.load(str(ROOT / "tests" / "gm_eval" / "scenarios" / "generated-mission.toml"))
+        with unittest.mock.patch.dict(os.environ, {"SOLO_HOME": str(own), "XDG_STATE_HOME": str(self.tmp / "state")}):
+            root = harness.start(scenario, self.tmp / "campaign")
+            with campaign.session(root) as c:
+                self.assertEqual(c.state["scene"], "hub")
+                self.assertIn("m1_w1", c.adventure["scenes"])  # published: the mission is in play
+                self.assertEqual(c.problems, [])
+            again = harness.roll_campaign(scenario)  # a second run finds it rolled already
+        self.assertEqual(again, own / "adventures" / scenario["adventure"])
+
+
 class Run(CampaignTest):
     def test_a_scripted_run_with_a_stand_in_gm(self):
         def stand_in(root, text=None, agent=None):

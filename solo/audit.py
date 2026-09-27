@@ -213,10 +213,11 @@ def pack_units(pack, kind, loaded):
     else:
         units += [f"scenes/{sid}" for sid in loaded["scenes"]]
         units += [f"npcs/{nid}" for nid in loaded["npcs"]]
-        spec = pack / "adventure.toml"
-        data = packs.load_data(spec) if spec.exists() else {}
-        for section in ("factions", "clocks", "weapons"):
-            units += [f"adventure.toml:{section}.{key}" for key in data.get(section, {})]
+        files = [pack / "adventure.toml", *sorted((pack / "chapters").glob("*.toml"))]
+        for spec in (f for f in files if f.exists()):
+            data, name = packs.load_data(spec), spec.relative_to(pack).as_posix()
+            for section in ("factions", "clocks", "weapons"):
+                units += [f"{name}:{section}.{key}" for key in data.get(section, {})]
     # This pack's own files: a pack laid over another claims only what it adds.
     units += [f"tables/{tid}" for tid in packs._load_folder(pack / "tables")]
     units += [f"characters/{cid}" for cid in packs._load_folder(pack / "characters")]
