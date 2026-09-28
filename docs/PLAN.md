@@ -650,6 +650,8 @@ solo import foundry character <actor.json> --out <pc.json>
 - Claude Code's hook input: `last_assistant_message` is used when present, the transcript file otherwise. If a Claude Code update changes the transcript format, capture falls back to nothing, silently; `solo log` shows whether `said` events are arriving.
 - Player clicks and GM commands interleave. The lock keeps the log consistent; the GM skill reads the log each turn so narration follows the dice. A GM that ignores the log would roll twice. Watch for it in play tests.
 - Rests are player-initiated, so a player can rest where the fiction forbids it. The GM can answer in the story (and commit a consequence); a "GM must allow" toggle is possible later.
+- Lines and veils reach the GM as instructions and nothing checks them, in play or in `tests/gm_eval`. Until the cut button and the safety scenarios land (ROADMAP items 4 and 5), a GM that ignores them is caught only by the player.
+- A GM turn ends when the agent stops or goes quiet for `SOLO_GM_TIMEOUT` seconds, and nothing else: no cap on its tool calls, its time or what it spends. ROADMAP item 4 adds the limits.
 - Free League's Dragonbane license lets this project use the game's terms, not carry a copy of its rules: no numbers, tables or text from a book in the repository, tests included (their rules are made up). See [NOTICE.md](../NOTICE.md).
 - `~/Games/solo` as the default home: visible and easy to back up, but it is a new folder in the player's home. It is created only by `solo new`.
 
