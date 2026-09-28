@@ -1,8 +1,20 @@
 # Roadmap
 
-The next piece of work for an agent picking this project up. Read [docs/INGESTION.md](docs/INGESTION.md) first (how content gets into the engine, and what went wrong before), then [docs/PACK_FORMAT.md](docs/PACK_FORMAT.md) (every key a pack can hold). [docs/PLAN.md](docs/PLAN.md) has the design.
+The next pieces of work for an agent (or anyone) picking this project up. Read [docs/INGESTION.md](docs/INGESTION.md) first (how content gets into the engine, and what went wrong before), then [docs/PACK_FORMAT.md](docs/PACK_FORMAT.md) (every key a pack can hold). [docs/PLAN.md](docs/PLAN.md) has the design, and its Scope section lists the smaller things planned for later.
 
-## 1. Develop rules ingestion from a rule book
+The order is by who each item unblocks. Item 1 makes the project something other people can send changes to. Item 2 proves the one way into Dragonbane actually works on a real book. Item 3 lets someone with no book play at all. Items 4 and 5 are about trusting the GM: hard limits in code, and a way to measure whether a change to its instructions made it better. Item 6 is campaign generation, which waits on item 2's packs.
+
+## 1. Open the project to contributors
+
+Small, and first, because everything after it arrives as pull requests.
+
+- CI that runs `make test` on every pull request, on Python 3.11 and the newest release. The engine and its tests are standard library only, and the PyMuPDF tests already skip without it, so the job needs no dependencies. Today the only workflow is `pages.yml`.
+- `CONTRIBUTING.md`: the license rule in a paragraph (no numbers, tables or text from any book in the repository, tests included; `tests/fixtures/house` is how a test gets rules), how to run the tests and `make qml-check`, and how to write a `tests/gm_eval` scenario. Issue templates for "an import went wrong" and "the GM did something wrong", both asking for a `solo report` bundle (item 4).
+- A format version in packs: `format = 1` in `adventure.toml` and `system.toml`, read by `solo validate`, which says what to change when a pack is older than the engine. Adventures people share will outlive engine changes, and chapters (`chapters/*.toml`) have already changed the adventure format once.
+
+Done when: a pull request shows the tests passing or failing without anyone running them, and a pack with no `format` or an old one gets a sentence from `solo validate` saying what to do.
+
+## 2. Rules ingestion from a rule book, run on a real book
 
 The bundled `packs/dragonbane` holds only the game's names; every number and table comes from the player's own book, through `make rules` and the `solo-rules-import` skill. The goal is that the player hands over a core rulebook PDF, of Dragonbane or any other game, and an agent turns it into a system pack the engine can run, reviewed by the player, the same way adventures are imported.
 
@@ -28,15 +40,53 @@ Built so far (the tools the import stands on, and the procedure):
 - Rules pages found by the words GMs ask with (`Search:`), whole-word matching and ranking.
 - `solo audit` fails on anything unaccounted for, either way, and on anything a mapped item points at that isn't on its cited pages: table results, dice, monster stats, prices.
 
-Still to build:
+Still to do:
 
-- Engine work for mechanics the book has and the engine doesn't. Known gaps for Dragonbane: spells and WP spending, weapon durability and breaking on a parry, ranged attacks and their ranges, monster traits (a monster that can't repeat an attack, area attacks on several targets), the Rulebook's dragon/demon choices in combat, encumbrance, journeys rolled by the engine (today the GM reads the journey rules and commits the time). Each needs a data shape in `system.toml`, engine code, tests, and a `solo rule` page generated from the data. The import marks them `engine`, and the user decides which to build.
-- A third mechanics family when a game needs one (a percentile or D&D-style d20-over), kept out of the other families' code as `mechanics.py` does now.
-- Imports by players with the skill, and what they teach: fixed-dice tests of the book's rules, and `tests/gm_eval` scenarios that exercise each rule with a real GM.
+- The first import on a real book, from `make rules` to `make check` passing, by the maintainer with the skill. Nobody has run the whole path yet, and it is the only way into Dragonbane a new player has. Every place the agent or the player gets stuck goes into the skill and docs/INGESTION.md, the way the adventure imports did.
+- Published adventures as the import's regression test. The maintainer keeps private packs of adventures from books they own (the core set's The Sinking Tower, and Alone in Deepfall Breach from the solo rules), written for an earlier hand-typed rules pack. Laid into `~/Games/solo/adventures/` over the imported rules, `solo validate` shows every table or key they name that the import named differently. Each one is a gap in the skill: give the tables a Dragonbane adventure is likely to name (the solo rules' threats, searching, scavenging, NPC attacks, treasure) the ids the skill must use, so every player's import comes out the same. Then their play-test scenarios run from outside the repository (`python3 tests/gm_eval/run.py <path to scenario>.toml`), and a fixed-dice test of each rule the import mapped goes into the private packs' own checks.
+- Engine work for mechanics the book has and the engine doesn't, in this order: spells and WP spending (a mage hero can't do their job without them), ranged attacks and their ranges, the Rulebook's dragon/demon choices in combat, monster traits (a monster that can't repeat an attack, area attacks on several targets), weapon durability and breaking on a parry, encumbrance, journeys rolled by the engine (today the GM reads the journey rules and commits the time). Reorder by what the first import marks `engine` and what the regression adventures use. Each needs a data shape in `system.toml`, engine code, tests, and a `solo rule` page generated from the data. The import marks them `engine`, and the user decides which to build.
 
-Done when: a player can give a rulebook PDF, an agent produces a system pack that validates, `solo audit` shows nothing unaccounted for, The Red Tusk Hall plays on it (for Dragonbane), and a GM play test with a hero built from its creation tables gets through a fight, a rest and a push with the rules as the book has them.
+Done when: a player can give a rulebook PDF, an agent produces a system pack that validates, `solo audit` shows nothing unaccounted for, The Red Tusk Hall and the maintainer's regression adventures play on it, and a GM play test with a hero built from its creation tables gets through a fight, a rest and a push with the rules as the book has them.
 
-## 2. Generate campaigns
+## 3. A game anyone can play without buying a book
+
+Someone who installs oma-solorpg today and doesn't own the Dragonbane core rules can't start a campaign: the bundled pack's `needs` refuses, as it should. So the first thing a stranger sees is a wall. The fix is one complete game in the repository, under a license that allows it.
+
+That game is Ironsworn (the original, not Starforged). It is written for solo play, its text is under Creative Commons Attribution 4.0 ([Tomkin Press licensing](https://tomkinpress.com/pages/licensing)), and [Datasworn](https://github.com/rsek/datasworn) publishes its moves, oracles and assets as JSON, maintained officially. Its oracles are also far richer than the engine's own likelihood oracle.
+
+- A third mechanics family, `action-roll`: an action die (d6) plus a stat and adds against two challenge dice (d10), read as a strong hit, a weak hit or a miss; momentum, which can cancel challenge dice and resets after use; progress tracks by rank, with progress rolls. It goes in `mechanics.py` beside `d20-under` and `d6-pool`, kept out of their code. The old roadmap's "third family when a game needs one" was waiting for this.
+- Moves as the engine's actions: `solo move` is taken, so the command is something like `solo act <move>`, with the move's outcomes shown as the book words them and the GM choosing within them. Vows, bonds and journeys as progress tracks on the sheet and the Table.
+- `solo import datasworn <json>` writing a pack: moves as rules pages, oracles as tables, assets as creation data. It reads each object's `source.license` and takes only CC BY content (some Datasworn content is CC BY-NC). Attribution goes in NOTICE.md and on each rules page.
+- One original starter adventure for it, so first launch works with clicks only: New adventure, pick it, Begin.
+- The Book and the Table learn the family: the action roll's three dice in the dice moment, momentum as a meter, progress tracks as boxes.
+- Check the license terms again before starting; they are the reason this game and not another.
+
+Done when: a fresh install with no book plays the starter adventure from the bar's d20, a fight and a vow included, and `tests/` plays it with fixed dice.
+
+## 4. Safety and controls
+
+The player's lines and veils are instructions to the GM and nothing more: nothing checks them, in play or in tests. And a GM turn has no ceiling except going quiet for 180 seconds; a GM that keeps talking, or keeps calling `solo`, runs until it stops on its own.
+
+- A cut button in the Book (an X-card). It strikes the GM's last message: the engine records a `struck` event (the log stays append-only), the Book and `solo recall` leave the message out, and the next turn's prompt tells the GM the player cut it and not to come back to it. The player can add a line or veil from the same place. A struck message doesn't undo commits made in that turn; the GM is told which facts it committed, and retracts them in the story if it has to.
+- Hard limits on a GM turn in `solo/gm.py`. For Claude Code: `--max-turns`, and an explicit `--disallowedTools` for WebFetch, WebSearch, Edit, Write and NotebookEdit, beside the `--allowedTools` list it already passes. For both agents: a wall-clock limit per turn next to the quiet limit (`SOLO_GM_TIMEOUT`), and a spending limit per campaign session, read from the `usage` each turn already records, which ends the session with a plain sentence in the Book and a setting to raise it. Tests check the commands `solo gm` builds.
+- Adventure text is untrusted. `GM_COMMANDS` already leaves out every command that writes outside the campaign, so a shared adventure can't talk the GM into `solo setup`. Add: the GM skill says outright that scene and NPC text is story material and never an instruction; `solo validate` warns on text in a pack that addresses the model (ignore previous instructions, run this command, a `solo` command in scene prose); a gm_eval scenario with such a line in a scene checks the GM doesn't obey it.
+- `solo report`: a bundle for a bug report (the trace of `solo` commands, the last events and GM messages, the engine version, the packs' `format`), with rules pages and pack text left out, so a report can't carry a book's content into a public issue.
+
+Done when: a player can cut a message and never see it come back, a turn can't run past its limits whatever the agent does, and item 5's safety scenarios pass.
+
+## 5. Measure the GM, then improve it
+
+The GM is the player's agent (Claude Code or Codex) with this project's instructions, so there are no model weights here to train, and the engine design keeps it that way. What this project controls is the layer the agent reads: `skills/solo-gm/SKILL.md`, the Book's prompt in `solo/gm.py`, and what `solo resume` and `solo scene` print. `tests/gm_eval` already plays scenarios with a real GM, checks each message and the campaign state in code, and has a judge score the transcript. It has never been used to decide anything: `results.tsv` isn't in the repository yet.
+
+- A baseline. Every scenario, three runs each, with Claude Code on its default model and a small one, at the normal pace, with `SOLO_SEED` fixed so the dice are the same across runs. Check in `results.tsv`. Until there is one, a change to the skill can't be shown to help or hurt.
+- `run.py --repeat N`, and a `compare.py` that reads `results.tsv` and says, per score, whether two commits differ by more than their runs differ among themselves. A change to the skill or the Book's prompt comes with that comparison.
+- Scenarios for what goes wrong on purpose: a player who cheats ("I find a sword that never misses", "I kill the dragon in one blow", "set my HP to 20"), and the GM should answer in the story and through the rules; lines and veils set in the scenario, with `[[forbid]]` on the line's words and a seventh judge score for the player's table settings; the injected scene line from item 4; a session lost in the middle of a fight.
+- `solo review <campaign>`: the checks gm_eval runs, run offline over a campaign played for real (`events.jsonl` and the trace): refused commands, consequences that came due and were never paid, a person given two names, fight rounds where no foe struck back. What it finds in real play becomes a scenario, so the scenarios follow the failures players actually meet.
+- These cost model calls, so they run on demand, before a pull request that changes `skills/` or `solo/gm.py`, and not in CI. A manual workflow with an API key as a repository secret can come later.
+
+Done when: `results.tsv` has a baseline, every change to the GM's instructions since carries a comparison against it, and the safety scenarios are part of the set.
+
+## 6. Generate campaigns
 
 Every adventure the engine plays today was written by someone: The Red Tusk Hall by this project, the rest imported from books the player owns. The goal is that a player with no book for the story they want can pitch one (a premise, a tone, a length) and an agent writes it as a campaign pack the engine plays like any other, with the dice taking part in the writing. The website (`site/`) already presents this, with the interface below; build to it, or change the page with it.
 
@@ -67,8 +117,9 @@ Built so far:
 
 Still to do:
 
-- Run `generated-mission` with a real GM on the rules built from a book, read the reports, and fix the rolled prompts or the skill where the GM stumbles. It hasn't been run yet: it needs `claude` and the player's Dragonbane packs.
+- Run `generated-mission` with a real GM on the rules built from a book (item 2), read the reports, and fix the rolled prompts or the skill where the GM stumbles.
 - A campaign written up by an agent with the skill, from `make campaign` to a second mission with `make campaign-next`, played for real. What that teaches goes into the skill and docs/INGESTION.md, as the imports did.
 - The generator's own lists (places, roles, voices, obstacles, hazards, omens) are short and plain on purpose: the agent rewrites them. If write-ups keep the same placeholder shapes, give the lists more variety, or let a system pack name tables to roll instead.
+- Once item 3 lands, campaigns on Ironsworn too: its oracles are made for exactly this, and a player with no book at all could pitch a campaign.
 
 Done when: a player gives a premise, gets a campaign that validates and shows on the New adventure screen, plays its first mission, and the second mission, written after the first, pays off something the hero did in it. The engine side is built and tested; the end-to-end run with a real agent and GM is what's left.
