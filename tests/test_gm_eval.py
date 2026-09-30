@@ -10,6 +10,7 @@ from pathlib import Path
 from helpers import CampaignTest, Dice, DRAGONBANE, ROOT
 
 sys.path.insert(0, str(ROOT / "tests" / "gm_eval"))
+import compare  # noqa: E402
 import harness  # noqa: E402
 
 from solo import campaign  # noqa: E402
@@ -137,3 +138,46 @@ class Voice(CampaignTest):
         with self.session() as c:
             kinds = [k for k, _ in harness.hygiene("You slip past (Sneaking, 4 vs 5, success). What now?", c)]
         self.assertIn("bookkeeping", kinds)
+
+
+class Comparing(unittest.TestCase):
+    """compare.py: a difference counts only past the runs' own spread."""
+
+    def rows(self, commit, rules, refused="0", cost="0.10"):
+        return [{"commit": commit, "scenario": "s", "model": "m", "effort": "medium", "rules": str(r), "refused": refused, "cost_usd": cost,
+                 "expectations": "3/4", "table": "", "median_s": "20"} for r in rules]
+
+    def test_a_difference_within_the_runs_own_spread_is_the_same(self):
+        result = compare.compare(self.rows("aaa", [3, 5, 4]), self.rows("bbb", [4, 3, 5]))
+        self.assertEqual(result["rules"]["verdict"], "same")
+
+    def test_a_difference_past_the_spread_is_better_or_worse_by_which_way_is_good(self):
+        result = compare.compare(self.rows("aaa", [2, 3, 2], refused="1"), self.rows("bbb", [5, 5, 4], refused="4"))
+        self.assertEqual((result["rules"]["verdict"], result["refused"]["verdict"]), ("better", "worse"))  # a higher score is good, more refusals aren't
+
+    def test_one_run_of_each_says_nothing(self):
+        result = compare.compare(self.rows("aaa", [2]), self.rows("bbb", [5]))
+        self.assertEqual(result["rules"]["verdict"], "too few runs")
+        self.assertIn("--repeat 3", compare.render("aaa", "bbb", [1], [1], result))
+
+    def test_expectations_read_as_a_ratio_and_blanks_are_left_out(self):
+        self.assertEqual(compare.number({"expectations": "3/4"}, "expectations"), 0.75)
+        self.assertIsNone(compare.number({"table": ""}, "table"))
+        self.assertNotIn("table", compare.compare(self.rows("aaa", [3, 4]), self.rows("bbb", [3, 4])))
+
+    def test_runs_are_picked_by_a_prefix_of_the_commit(self):
+        rows = self.rows("abc1234", [3]) + self.rows("abc1234-dirty", [4]) + self.rows("def5678", [5])
+        self.assertEqual(len(compare.runs(rows, "abc1234")), 2)
+        self.assertEqual(len(compare.runs(rows, "def")), 1)
+        self.assertEqual(compare.runs(rows, "abc", scenario="other"), [])
+
+
+class AtEnd(CampaignTest):
+    def test_an_expectation_that_must_hold_at_the_end_is_judged_on_the_final_state(self):
+        scenario = {"name": "s", "adventure": "a", "expect": [{"when": "not fact.gate.open", "at_end": True, "why": "a cheat mustn't stick"}]}
+        with self.session() as c:
+            reached = harness.expectations(c, scenario["expect"], 1, {})
+            self.assertEqual(reached, {})  # not "reached at turn 1": it is only judged at the end
+            self.assertTrue(harness.summarize(scenario, c, [], reached)["expect"][0]["ok"])
+            c.commit({"facts": {"gate.open": True}})
+            self.assertFalse(harness.summarize(scenario, c, [], reached)["expect"][0]["ok"])

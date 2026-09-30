@@ -271,6 +271,9 @@ class PrefsTest(CampaignTest):
 
     def test_the_gm_cant_change_them_without_asking(self):
         self.assertNotIn("prefs", cli.GM_COMMANDS)
+        # The X-card and the budget are the player's too: a GM that could cut its own words or raise its own limit is no check.
+        for command in ("strike", "gm", "report"):
+            self.assertNotIn(command, cli.GM_COMMANDS)
 
 
 class PackValidationTest(CampaignTest):

@@ -1,0 +1,79 @@
+# The starter adventure: a game anyone can play, because Ironsworn's rules ship with this
+# project (packs/ironsworn). It is written for one hero and one sitting, and it walks through the
+# game's three loops on the way: a vow sworn and kept, a journey, a fight. The prose, the people
+# and the place are this project's own (MIT); nothing here comes from a book.
+title = "The Bell Under the Hill"
+format = 1
+system = "ironsworn"
+summary = "For three nights a bell has tolled under the barrow hill above Marrow Ford, and each night someone has walked toward it in their sleep and not come back. A short adventure for one hero: a hamlet, a road, a barrow, and an oath that somebody forgot to keep."
+start = "ford"
+
+[factions.marrow_ford]
+name = "The people of Marrow Ford"
+standing = 0
+
+# Every miss on a move is the bell tolling once more: the dread the hero is racing. Each stroke
+# rolls what the bell does; the fourth changes the hamlet's night; the eighth brings the dead
+# down to the ford. A hero who plays carefully, burns momentum where it counts and keeps their
+# word to the barrow should never see the last one.
+[clocks.bell]
+label = "The bell"
+segments = 8
+advance = ["check:miss"]
+on_tick = "bell_omens"
+at_full = "the_dead_walk"
+
+[[clocks.bell.stages]]
+at = 4
+text = "The tolling comes from nearer than the hill now, and it has stopped waiting between strokes."
+note = "Half rung. Everyone in Marrow Ford who sleeps is walking toward the hill in their dreams, and only a hand on the shoulder turns them. Anyone the hero leaves alone tonight is lost."
+facts = { bell.near = true }
+
+[scenes.ford]
+title = "Marrow Ford"
+npcs = ["tam"]
+exits = { hearth = "Osk's hearth", mill = "The mill", road = "The barrow road" }
+tables = ["bell_omens"]
+
+[[scenes.ford.branches]]
+when = "fact.bell.near"
+text = "The bell is louder here than it was. Doors stand open, and people are standing in them, swaying."
+
+[scenes.hearth]
+title = "Osk's Hearth"
+npcs = ["osk"]
+exits = { ford = "Back out to the ford" }
+
+[scenes.mill]
+title = "The Mill"
+npcs = ["brenna"]
+exits = { ford = "Back to the ford" }
+
+[scenes.road]
+title = "The Barrow Road"
+exits = { ford = "Back down to Marrow Ford", mouth = { label = "On to the barrow's mouth", when = "fact.road.done" } }
+tables = ["road_signs", "bell_omens"]
+
+[scenes.mouth]
+title = "The Barrow's Mouth"
+exits = { road = "Back down the road", hall = "Into the long hall" }
+
+[scenes.hall]
+title = "The Long Hall"
+npcs = ["hollow_ones", "wen", "marta", "egil"]
+exits = { mouth = "Back to the mouth", bell = { label = "Through the iron door", when = "fact.door.open" } }
+dark = true
+
+[scenes.bell]
+title = "The Bell Chamber"
+npcs = ["hild"]
+exits = { hall = "Back to the long hall", dawn = { label = "Out of the barrow, into the morning", when = "fact.bell.silenced" } }
+climax = true
+
+[scenes.dawn]
+title = "Morning at Marrow Ford"
+ending = true
+
+[scenes.the_dead_walk]
+title = "The Dead Walk"
+ending = true

@@ -1,0 +1,12 @@
+# What the bell does when it tolls. Rolled by the bell clock every time it ticks, and by the GM
+# whenever a scene wants a reminder that it is out there.
+name = "The bell tolls"
+formula = "1d6"
+results = [
+  { range = [1, 1], text = "Every dog in the hamlet stops barking at once." },
+  { range = [2, 2], text = "A lamp goes out in a room where the door is shut." },
+  { range = [3, 3], text = "The river slows, and the stones of the ford stand out of it like teeth." },
+  { range = [4, 4], text = "The stroke comes from closer than the hill, and the ground hums with it." },
+  { range = [5, 5], text = "Someone on the far bank sits up in the dark, listening, and starts to walk." },
+  { range = [6, 6], text = "Frost on the inside of every window, in the space of a breath." },
+]

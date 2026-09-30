@@ -28,6 +28,7 @@ Item {
     if (outcome.dragon) return "DRAGON"
     if (outcome.demon) return "DEMON"
     if (outcome.successes !== undefined) return outcome.successes + (outcome.successes === 1 ? " success" : " successes")
+    if (outcome.hit !== undefined) return outcome.hit.replace("_", " ") + (outcome.match ? " (match)" : "")
     return outcome.success ? "success" : "failure"
   }
 
@@ -90,7 +91,7 @@ Item {
         font.family: entry.theme.mono
         font.pixelSize: entry.theme.body * 1.4
         color: entry.verdictColor(entry.beat.outcome)
-        text: entry.beat.death ? "☠" : "⚄"
+        text: entry.beat.death ? "☠" : entry.beat.burned ? "✹" : "⚄"
         anchors.verticalCenter: parent.verticalCenter
       }
       Column {
@@ -99,8 +100,9 @@ Item {
           font.family: entry.theme.mono
           font.pixelSize: entry.theme.body
           color: entry.theme.text
-          text: (entry.beat.pushed ? "pushed " : entry.beat.death ? "death roll " : "") + "<b>" + entry.html(entry.beat.label || "") + "</b>"
+          text: (entry.beat.pushed ? "pushed " : entry.beat.death ? "death roll " : entry.beat.burned ? "burned momentum on " : "") + "<b>" + entry.html(entry.beat.label || "") + "</b>"
             + (entry.beat.outcome && entry.beat.outcome.result !== undefined ? "  " + entry.beat.outcome.result + " vs " + entry.beat.outcome.target : "")
+            + (entry.beat.outcome && entry.beat.outcome.hit !== undefined ? "  " + entry.beat.outcome.score + " vs " + entry.beat.outcome.challenge.join(" · ") : "")
             + "  <span style=\"color:" + entry.verdictColor(entry.beat.outcome) + "\">" + entry.verdict(entry.beat.outcome) + "</span>"
         }
         Text {

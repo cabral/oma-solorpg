@@ -78,3 +78,45 @@ def _success_rules(success):
 
 def _hits(value, rules):
     return next((hits for threshold, hits in rules if value >= threshold), 0)
+
+
+def action_roll(stat, adds=0, momentum=0, rng=None):
+    """Action roll (Ironsworn): an action die (d6) plus a stat and adds, at most 10, against
+    two challenge dice (d10). The score has to beat a die, not tie it; beating both is a
+    strong hit, one a weak hit, neither a miss. Negative momentum that matches the action
+    die cancels it: the die counts for nothing, but the stat and adds still do.
+    """
+    action = dice.die(6, rng)
+    challenge = [dice.die(10, rng), dice.die(10, rng)]
+    dulled = momentum < 0 and action == -momentum
+    return _read({
+        "action": action, "stat": stat, "adds": adds, "momentum": momentum, "dulled": dulled,
+        "score": min(10, (0 if dulled else action) + stat + adds), "challenge": challenge, "cancelled": [],
+    })
+
+
+def progress_roll(progress, rng=None):
+    """Progress roll: the filled boxes of a progress track (at most 10) against the two
+    challenge dice. No action die, and momentum plays no part."""
+    return _read({"progress": progress, "score": progress, "challenge": [dice.die(10, rng), dice.die(10, rng)], "cancelled": []})
+
+
+def burn(outcome, momentum):
+    """Burn momentum after an action roll: every challenge die below it is cancelled, and a
+    cancelled die counts as beaten. The roll as it would read, or None when burning would
+    not improve it (there is nothing under the momentum that the score doesn't beat already)."""
+    cancelled = [i for i, die in enumerate(outcome["challenge"]) if die < momentum]
+    burned = _read({**outcome, "cancelled": cancelled, "burned": momentum})
+    return burned if burned["beaten"] > outcome["beaten"] else None
+
+
+def momentum_limits(spec, impacts):
+    """Momentum's ceiling and its reset with `impacts` marked: each takes one off both, and
+    the reset stops at 0. `spec` is the system's [momentum]: min, max and reset."""
+    return {"max": spec["max"] - impacts, "reset": max(0, spec["reset"] - impacts)}
+
+
+def _read(outcome):
+    beaten = sum(i in outcome["cancelled"] or outcome["score"] > die for i, die in enumerate(outcome["challenge"]))
+    return {**outcome, "beaten": beaten, "hit": ("miss", "weak_hit", "strong_hit")[beaten], "success": beaten > 0,
+            "match": outcome["challenge"][0] == outcome["challenge"][1]}

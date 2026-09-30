@@ -41,6 +41,7 @@ they raise the alarm (fact hall.alarm).
 `adventure.toml`:
 
 ```toml
+format = 1                           # the pack format this was written for; solo validate reads it
 title = "The Red Tusk Hall"
 start = "road"
 

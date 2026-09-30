@@ -1,0 +1,103 @@
+{
+  "_id": "classic", "datasworn_version": "0.0.10", "type": "ruleset", "title": "Test Rulebook",
+  "authors": [{"name": "A. Writer"}], "date": "2019-06-05", "url": "https://example.test",
+  "license": "https://creativecommons.org/licenses/by/4.0",
+  "rules": {},
+  "oracles": {
+    "core": {
+      "type": "oracle_collection", "oracle_type": "tables", "name": "Core",
+      "contents": {
+        "omen": {
+          "oracle_type": "table_text", "name": "Omen", "dice": "1d10",
+          "_source": {"title": "Test Rulebook", "page": 12, "license": "https://creativecommons.org/licenses/by/4.0"},
+          "rows": [
+            {"min": 1, "max": 4, "text": "A __crow__ watches. See [Face Danger](id:classic/moves/adventure/face_danger)."},
+            {"min": 5, "max": 8, "text": "Wind, and a name for it.", "oracle_rolls": [{"oracle": "classic/oracles/core/weather", "auto": false, "number_of_rolls": 1}]},
+            {"min": 9, "max": 10, "text": "Roll twice", "oracle_rolls": [{"oracle": null, "auto": true, "number_of_rolls": 2}]}
+          ]
+        },
+        "weather": {
+          "oracle_type": "table_text", "name": "Weather", "dice": "d6",
+          "_source": {"title": "Test Rulebook", "license": "https://creativecommons.org/licenses/by/4.0"},
+          "rows": [{"min": 1, "max": 3, "text": "Rain"}, {"min": 4, "max": 6, "text": "Sun"}]
+        },
+        "secret": {
+          "oracle_type": "table_text", "name": "Secret", "dice": "1d6",
+          "_source": {"title": "Test Rulebook", "license": "https://creativecommons.org/licenses/by-nc-sa/4.0"},
+          "rows": [{"min": 1, "max": 6, "text": "Not for us"}]
+        }
+      }
+    },
+    "moves": {
+      "type": "oracle_collection", "oracle_type": "tables", "name": "Moves",
+      "collections": {
+        "ask_the_oracle": {
+          "oracle_type": "table_shared_text", "name": "Ask the Oracle",
+          "contents": {
+            "likely": {"oracle_type": "column_text", "name": "Likely", "dice": "1d100", "rows": [{"min": 1, "max": 25, "text": "No"}, {"min": 26, "max": 100, "text": "Yes"}]}
+          }
+        }
+      }
+    }
+  },
+  "moves": {
+    "adventure": {
+      "name": "Adventure Moves",
+      "contents": {
+        "face_danger": {
+          "_id": "classic/moves/adventure/face_danger", "name": "Face Danger", "roll_type": "action_roll",
+          "trigger": {"conditions": [
+            {"method": "player_choice", "roll_options": [{"using": "stat", "stat": "edge"}]},
+            {"method": "player_choice", "roll_options": [{"using": "stat", "stat": "iron"}]}
+          ]},
+          "text": "When __you risk it__, roll +edge or +iron. Then [Pay the Price](id:classic/moves/fate/pay_the_price).",
+          "outcomes": {"strong_hit": {"text": "You do it."}, "weak_hit": {"text": "You do it, at a cost."}, "miss": {"text": "You don't."}},
+          "_source": {"title": "Test Rulebook", "page": 60, "license": "https://creativecommons.org/licenses/by/4.0"}
+        },
+        "bruise": {
+          "_id": "classic/moves/adventure/bruise", "name": "Bruise", "roll_type": "action_roll",
+          "trigger": {"conditions": [{"method": "highest", "roll_options": [{"using": "stat", "stat": "iron"}, {"using": "condition_meter", "condition_meter": "health"}]}]},
+          "text": "Roll +health or +iron, whichever is higher.\n\n{{table:classic/oracles/core/omen}}",
+          "outcomes": {"strong_hit": {"text": "Fine."}, "weak_hit": {"text": "Sore."}, "miss": {"text": "Hurt."}},
+          "oracles": ["classic/oracles/core/omen"],
+          "_source": {"title": "Test Rulebook", "page": 61, "license": "https://creativecommons.org/licenses/by/4.0"}
+        },
+        "finish": {
+          "_id": "classic/moves/adventure/finish", "name": "Finish", "roll_type": "progress_roll", "tracks": {"category": "Vow"},
+          "trigger": {"conditions": [{"method": "progress_roll", "roll_options": [{"using": "progress_track"}]}]},
+          "text": "Roll the challenge dice against your progress.",
+          "outcomes": {"strong_hit": {"text": "Done."}, "weak_hit": {"text": "Nearly."}, "miss": {"text": "No."}},
+          "_source": {"title": "Test Rulebook", "page": 62, "license": "https://creativecommons.org/licenses/by/4.0"}
+        },
+        "rest": {
+          "_id": "classic/moves/adventure/rest", "name": "Rest", "roll_type": "no_roll",
+          "trigger": {"conditions": null}, "text": "You rest.", "outcomes": null,
+          "_source": {"title": "Test Rulebook", "page": 63, "license": "https://creativecommons.org/licenses/by/4.0"}
+        },
+        "borrowed": {
+          "_id": "classic/moves/adventure/borrowed", "name": "Borrowed", "roll_type": "action_roll",
+          "trigger": {"conditions": [{"method": "player_choice", "roll_options": [{"using": "edge"}]}]},
+          "text": "Not ours.", "outcomes": {"strong_hit": {"text": "a"}, "weak_hit": {"text": "b"}, "miss": {"text": "c"}},
+          "_source": {"title": "Somebody Else", "page": 1, "license": "https://creativecommons.org/licenses/by-nc-sa/4.0"}
+        }
+      }
+    }
+  },
+  "assets": {
+    "path": {
+      "name": "Path Assets",
+      "contents": {
+        "scout": {
+          "_id": "classic/assets/path/scout", "name": "Scout", "category": "Path", "requirement": "You know the land.",
+          "abilities": [
+            {"text": "When you [Undertake a Journey](id:classic/moves/adventure/undertake_a_journey), add +1.", "enabled": true},
+            {"name": "Keen", "text": "Add +1 more.", "enabled": false}
+          ],
+          "_source": {"title": "Test Assets", "page": 3, "license": "https://creativecommons.org/licenses/by/4.0"}
+        }
+      }
+    }
+  },
+  "atlas": {"lands": {"name": "The Lands", "contents": {}, "_source": {"license": "https://creativecommons.org/licenses/by-nc-sa/4.0"}}},
+  "npcs": {}, "truths": {}, "rarities": {}, "delve_sites": {}, "site_domains": {}, "site_themes": {}
+}

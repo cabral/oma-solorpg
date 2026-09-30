@@ -18,6 +18,11 @@ BUNDLED = ROOT / "packs" / "dragonbane"
 DRAGONBANE = FIXTURES / "house"
 RED_TUSK = ROOT / "examples" / "red-tusk"
 RAGNA = FIXTURES / "ragna.toml"
+# Ironsworn is the one bundled game with its rules in the repository (CC BY, see NOTICE.md), so
+# the tests for its engine family play on the pack itself, on a small made-up adventure.
+IRONSWORN = ROOT / "packs" / "ironsworn"
+OATH = FIXTURES / "oath"
+HRAFNA = IRONSWORN / "characters" / "hrafna.toml"
 
 
 def install_rules(home):

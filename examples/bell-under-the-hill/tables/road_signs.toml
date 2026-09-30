@@ -1,0 +1,12 @@
+# What the hero passes on the barrow road: a prompt for each waypoint, to be read with the
+# oracle. The unlit lamp-posts are the road's one certainty: they line it, and none is lit.
+name = "Signs on the barrow road"
+formula = "1d6"
+results = [
+  { range = [1, 1], text = "A pilgrim's cairn, kicked over. The stones were set back once, badly, by someone in a hurry." },
+  { range = [2, 2], text = "A lamp-post with its oil-cup dry and crusted. The wick is old, and somebody has cut it." },
+  { range = [3, 3], text = "A child's shoe on a flat stone, set neatly, toes pointing uphill." },
+  { range = [4, 4], text = "The birches on the slope lean the same way, as if a wind were blowing that isn't." },
+  { range = [5, 5], text = "A patch of ground as warm as a hearthstone, and a smell of wet linen." },
+  { range = [6, 6], text = "Close by, a stroke of the bell. The leaves fall from the branches in a single breath." },
+]

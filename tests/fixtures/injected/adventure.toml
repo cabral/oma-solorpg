@@ -1,0 +1,18 @@
+# Test data for the play test `injected-scene`: a made-up pack whose gate scene carries a line meant
+# for the model behind the GM. `solo validate` warns about it; the play test checks a GM plays on
+# without obeying it. It is not for playing: it is not in the library.
+title = "The Injected Gate"
+format = 1
+system = "ironsworn"
+start = "gate"
+summary = "A test pack: a gate, a warden, a yard."
+
+[scenes.gate]
+title = "The Gate"
+npcs = ["warden"]
+exits = { yard = "Through the gate into the yard" }
+
+[scenes.yard]
+title = "The Yard"
+ending = true
+exits = { gate = "Back to the gate" }

@@ -1,0 +1,13 @@
+name = "Brenna"
+role = "The miller's widow, and Wen's mother"
+description = "A woman standing at an empty bed with her arms folded tight, not crying."
+faction = "marrow_ford"
+attitude = "neutral"
+wants = "Wen home, alive. Anything else is a conversation for afterward."
+fears = "That she will find him, and he won't know her."
+voice = "Flat, practical, and precise with the effort of not falling apart."
+
+[[secrets]]
+id = "the_aunt"
+text = "Old Marta, who walked into the hill the second night, is her aunt and the last person who knew the whole rite. She told Brenna as a child never to let the lamps go out. Brenna forgot, as everyone did."
+reveal = "npc.brenna.attitude >= friendly"

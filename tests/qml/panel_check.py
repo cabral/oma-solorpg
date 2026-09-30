@@ -23,7 +23,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 sys.path.insert(0, str(HERE))
 
-from PySide6.QtCore import Property, QFileSystemWatcher, QObject, QSize, QTimer, QUrl, Signal, Slot  # noqa: E402
+from PySide6.QtCore import Property, QFileSystemWatcher, QMetaObject, QObject, Q_ARG, QSize, QTimer, QUrl, Signal, Slot  # noqa: E402
 from PySide6.QtGui import QColor, QGuiApplication  # noqa: E402
 from PySide6.QtQml import QQmlEngine, qmlRegisterModule, qmlRegisterSingletonInstance, qmlRegisterType  # noqa: E402
 from PySide6.QtQuick import QQuickItem, QQuickView  # noqa: E402
@@ -251,8 +251,10 @@ def main(out):
     item.open(json.dumps({"book": True}))
     wait(1500)
     errors += begin_and_ask(item, panel, out, work, wait)
+    errors += an_x_card(item, panel, out, work, wait)
     errors += desk_moments(item, panel, out, work, wait)
     errors += deleted_while_dying(item, bar, work, wait)
+    errors += a_game_of_moves(item, panel, out, work, wait)
     print("bar tooltip:", bar.rootObject().tooltip())
     print("launched:")
     for command in LAUNCHED:
@@ -267,6 +269,7 @@ def begin_and_ask(item, panel, out, work, wait):
     """New adventure and the oracle from the panel, with what the player typed starting
     with a dash: it has to reach the engine as words, never as options."""
     problems = []
+    item.setProperty("pickedAdventure", "red-tusk")  # the first of the bundled adventures is the Ironsworn one
     item.show("new")
     wait(2500)
     panel.grabWindow().save(str(out / "new.png"))
@@ -289,6 +292,37 @@ def begin_and_ask(item, panel, out, work, wait):
     if not any('"-is anyone watching?"' in entry["text"] for entry in log):
         problems.append(f"the oracle didn't get the question: {item.property('error') or log[-1]['text']}")
     panel.grabWindow().save(str(out / "table-alive.png"))
+    return problems
+
+
+def an_x_card(item, panel, out, work, wait):
+    """The Book's cut: with the GM's last message on the page, the panel's words become a note and a line, `solo strike`
+    runs, and the GM is asked to carry on without it."""
+    from solo import campaign
+    game = Path((work / "state" / "solo" / "current").read_text().strip())
+    with campaign.session(game) as c:
+        c.say("A spider the size of a dog drops onto the road. What do you do?")
+    problems = []
+    item.setProperty("agentInfo", {"agent": "claude", "book": True})  # a default agent that can write in the Book
+    book = item.findChild(QObject, "book")
+    for _ in range(20):  # the Book reads state.json when the file changes: give it a moment
+        wait(300)
+        if book is not None and book.property("canCut"):
+            break
+    if book is None or not book.property("canCut"):
+        return [f"the Book doesn't offer the cut with the GM's message on the page (found: {book is not None}"
+                + (f", agent {book.property('agent').toVariant()}, busy {book.property('busy')}, dead {book.property('dead')})" if book is not None else ")")]
+    book.setProperty("cutting", True)
+    item.findChild(QObject, "cutInput").setProperty("text", "no spiders")
+    LAUNCHED.clear()
+    QMetaObject.invokeMethod(book, "cutIt", Q_ARG("QVariant", "line"))
+    wait(2500)
+    state = json.loads((game / "state.json").read_text())
+    if len(state["struck"]) != 1 or state["prefs"]["lines"] != ["no spiders"]:
+        problems.append(f"the cut didn't reach the engine: {item.property('error') or state['struck']}, {state['prefs']}")
+    said = [" ".join(str(a) for a in command) for command in LAUNCHED]
+    if not any("gm turn" in line for line in said):
+        problems.append(f"the GM wasn't asked to carry on after the cut (launched: {said})")
     return problems
 
 
@@ -326,6 +360,70 @@ def desk_moments(item, panel, out, work, wait):
     expect("death", lambda c: c.death_roll(rng=Dice(20, 3, 3, 3)), ["desk --after 1.94 death", "/bell-"])
     return problems
 
+
+
+def a_game_of_moves(item, panel, out, work, wait):
+    """Ironsworn from the Table, with no book: begin The Bell Under the Hill with a pre-made hero, start
+    a vow, roll a move with a stat and a progress roll from the buttons, and burn momentum on a miss that
+    could still be saved. The Table offers moves and tracks where a game of skills offers skills."""
+    from helpers import Dice
+    from solo import campaign
+    problems = []
+    item.setProperty("pickedAdventure", "bell-under-the-hill")
+    item.setProperty("pickedHero", "hrafna")
+    item.show("new")
+    wait(2500)
+    panel.grabWindow().save(str(out / "new-ironsworn.png"))
+    item.begin()
+    wait(3000)
+    if item.property("error"):
+        return [f"Begin (Ironsworn) failed: {item.property('error')}"]
+    game = Path((work / "state" / "solo" / "current").read_text().strip())
+    item.open(json.dumps({"view": "table"}))
+    wait(1500)
+    panel.grabWindow().save(str(out / "table-ironsworn.png"))
+
+    def state():
+        return json.loads((game / "state.json").read_text())
+
+    item.findChild(QObject, "trackName").setProperty("text", "-Silence the bell")
+    item.startTrack()
+    wait(1500)
+    tracks = {t["name"] for t in state()["progress"].values()}
+    if "-Silence the bell" not in tracks:
+        problems.append(f"the Table didn't start the vow: {item.property('error') or tracks}")
+    item.rollMove("face_danger", "edge", "")
+    wait(1500)
+    if state()["last_check"]["type"] != "act" or state()["last_check"]["stat"] != "edge":
+        problems.append(f"the Table's move wasn't rolled: {item.property('error') or state()['last_check']}")
+    item.setProperty("adds", 1)
+    item.pickMove("gather_information")  # one stat: it rolls at once, with the add
+    wait(1500)
+    if state()["last_check"]["outcome"]["adds"] != 1:
+        problems.append("the adds didn't reach the move")
+    item.pickMove("face_danger")  # five stats: it waits for one
+    wait(300)
+    if item.property("pickedMove") != "face_danger":
+        problems.append("a move with a choice to make didn't wait for it")
+    panel.grabWindow().save(str(out / "table-ironsworn-choosing.png"))
+    item.setProperty("pickedMove", "")
+    with campaign.session(game) as c:
+        c.commit({"pc": {"momentum": "+7"}})
+        c.act("face_danger", stat="edge", rng=Dice(1, 5, 8))  # a miss that momentum could still save
+    wait(1500)
+    if not state()["burn"]:
+        problems.append("the state offers no burn for a miss momentum could save")
+    panel.grabWindow().save(str(out / "table-ironsworn-burn.png"))
+    item.act(["burn"], "roll", None)
+    wait(1500)
+    if state()["last_check"]["type"] != "burn" or state()["pc"]["tracks"]["momentum"]["value"] != 2:
+        problems.append("the Table's burn didn't burn momentum")
+    item.rollTrack(next(t for t in item.openTracks().toVariant() if t["kind"] == "vow"))
+    wait(1500)
+    if state()["last_check"].get("track") is None:
+        problems.append(f"the Table's progress roll wasn't made: {item.property('error') or state()['last_check']}")
+    panel.grabWindow().save(str(out / "table-ironsworn-vow.png"))
+    return problems
 
 
 def deleted_while_dying(item, bar, work, wait):

@@ -75,6 +75,11 @@ def listing():
         try:
             system = packs.load_system(path)
             gaps = packs.missing(system)
+            unreadable = packs.format_problems(packs.declared_formats(system))
+            if unreadable:
+                # Written for a newer engine than this one: not offered, and the player is told to update.
+                problems.append(f"system {path.name}: {unreadable[0]}")
+                continue
             if gaps:
                 # Only a game's names so far: nothing can be played on it until the book's rules are built.
                 problems.append(f"system {path.name}: " + packs.missing_text(system, gaps))
@@ -99,6 +104,10 @@ def listing():
             premade = packs._load_folder(path / "characters")
         except SoloError as error:
             problems.append(f"adventure {path.name}: {error}")
+            continue
+        unreadable = packs.format_problems([(f"{path.name}/adventure.toml", spec.get("format"))])
+        if unreadable:
+            problems.append(f"adventure {path.name}: {unreadable[0]}")
             continue
         if spec.get("draft"):
             # A campaign an agent is still writing (make campaign): not ready to begin.

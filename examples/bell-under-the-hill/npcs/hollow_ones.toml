@@ -1,0 +1,8 @@
+name = "The hollow ones"
+role = "The barrow's guardians"
+description = "Gaunt cloth-wrapped shapes that rise from the niches of the long hall, quick and very quiet."
+many = true
+attitude = "hostile"
+wants = "The living out of the hall, or the rite finished."
+fears = "Nothing. They are what is left when the rest of a person has gone."
+voice = "None. They make no sound except the rustle of linen."

@@ -93,7 +93,7 @@ def create(root, system_path, adventure_path, character, title=None, prefs=None)
         data = dict(character) if isinstance(character, dict) else packs.load_data(character)
         # A hero from an earlier campaign brings their story: what happened there, and the
         # hero.* facts the player gave them (see `hero`).
-        past, carried = data.pop("past", None), data.pop("facts", None)
+        past, carried, kept = data.pop("past", None), data.pop("facts", None), data.pop("kept", None)
         pc = character_sheet(data, system)
         root.mkdir(parents=True, exist_ok=True)
         config = {
@@ -104,7 +104,7 @@ def create(root, system_path, adventure_path, character, title=None, prefs=None)
         (root / "campaign.toml").write_text("".join(f"{k} = {packs.toml_string(v)}\n" for k, v in config.items()), encoding="utf-8")
         with session(root) as campaign:
             event = campaign.append("created", format=FORMAT, title=config["title"], pc=pc, scene=adventure["start"],
-                                    past=past or None, facts=carried or None)
+                                    past=past or None, facts=carried or None, kept=kept or None)
             campaign._follow([f"scene:{adventure['start']}"], cause=event["seq"])
             campaign._voices(event["seq"])
             if prefs and any(prefs.values()):
@@ -120,18 +120,21 @@ def create(root, system_path, adventure_path, character, title=None, prefs=None)
 def hero(root, name=None):
     """The hero of an earlier campaign, as they stand now, to carry into a new adventure:
     skills and gear as they were earned, rested (tracks full, conditions gone). Their story
-    comes too: each earlier adventure in a few lines (`past`), and the hero.* facts."""
+    comes too: each earlier adventure in a few lines (`past`), and the hero.* facts. The tracks
+    a hero always has (bonds) come as they stand (`kept`)."""
     with session(root) as c:
         pc = copy.deepcopy(c.state["pc"])
         past = [*c.state["past"], _looking_back(c)]
         facts = {k: v for k, v in c.state["facts"].items() if k.startswith("hero.")}
+        kept = {k: t["ticks"] for k, t in c.state["progress"].items() if k in ((c.state["labels"]["progress"] or {}).get("unranked") or {})}
     if pc["dead"]:
         raise SoloError(f"{pc['name']} died in {Path(root).name}; the dead stay in the Hall of the Fallen")
     return {
         "name": name or pc["name"], "info": pc["info"], "attributes": pc["attributes"], "skills": pc["skills"],
-        "tracks": {k: {"value": t["max"], "max": t["max"]} for k, t in pc["tracks"].items()},
+        # Momentum (the track with a reset) starts over at its own, on the new sheet.
+        "tracks": {k: {"value": t["max"], "max": t["max"]} for k, t in pc["tracks"].items() if "reset" not in t},
         "conditions": [], "items": pc["items"], "abilities": pc["abilities"], "ratings": pc["ratings"],
-        "past": past, "facts": facts,
+        "past": past, "facts": facts, "kept": kept,
     }
 
 
@@ -181,13 +184,20 @@ def character_sheet(data, system):
         if key not in skills and skill["untrained"]:
             value = packs.base_chance(system, attributes.get(skill["attribute"], 0))
             skills[key] = {"value": value, "attribute": skill["attribute"], "name": skill["name"], "trained": False}
+    conditions = [slug(c) for c in data.get("conditions", [])]
+    momentum = system.get("momentum")
+    if momentum:
+        # Momentum's ceiling and reset follow the hero's impacts; the value stays under the ceiling.
+        limits = mechanics.momentum_limits(momentum, len(conditions))
+        start = tracks.get("momentum", {}).get("value", limits["reset"])
+        tracks["momentum"] = {"value": _clamp(start, momentum["min"], limits["max"]), "min": momentum["min"], **limits}
     sheet = {
         "name": data.get("name", "The hero"),
         "info": data.get("info", {}),
         "attributes": attributes,
         "skills": skills,
         "tracks": tracks,
-        "conditions": [slug(c) for c in data.get("conditions", [])],
+        "conditions": conditions,
         "items": list(data.get("items", [])),
         "abilities": list(data.get("abilities", [])),
         "ratings": dict(data.get("ratings", {})),
@@ -301,6 +311,8 @@ class Campaign:
     def check(self, name, boons=0, banes=0, rng=None, pushable=True, **extra):
         """Roll a skill or attribute. A condition tied to the roll's attribute adds a bane.
         `extra` marks what the roll is for (an attack, a defence) in the log."""
+        if self.system["family"] == "action-roll":
+            raise SoloError(f"{self.system['name']} rolls moves, not skills: solo act <move> --stat <stat> (solo rule moves)")
         self._able("roll")
         kind, key, label, attribute = self._stat(name)
         auto = self._condition_banes(attribute)
@@ -318,6 +330,8 @@ class Campaign:
         """Push the last check once. The cost comes from the system pack: a condition the
         character doesn't have yet (Dragonbane) or a track increase (stress in Alien). A hero
         with Sole Survivor may pay willpower instead of a condition."""
+        if self.system["family"] == "action-roll":
+            raise SoloError("a roll can't be pushed here: after an action roll, momentum can be burned (solo burn)")
         self._able("push a roll")
         last = self.state["last_check"]
         cost = self.system["push"].get("cost", "condition")
@@ -368,6 +382,175 @@ class Campaign:
                 self._strike(event, rng)
             return event
 
+    # Moves --------------------------------------------------------------------------
+    #
+    # Action-roll systems (Ironsworn): the hero makes a move, the engine rolls what it asks
+    # for and gives back the move's own words for the result. What that result gives or
+    # costs (momentum, health, a mark of progress) is the GM's to commit; the engine keeps
+    # the rolls honest and the progress tracks and momentum where the rules put them.
+
+    def act(self, move_id, stat=None, adds=0, track=None, rng=None):
+        """Make a move. An action roll adds `stat` (or, when the move says which, the highest
+        or lowest of the stats it lists) and `adds` to the action die; a progress move sets
+        the full boxes of a track against the challenge dice."""
+        self._moves_only("make a move")
+        self._able("make a move")
+        self._let_stand(rng)
+        move_id, move = self._move(move_id)
+        if move["kind"] == "none":
+            raise SoloError(f"{move['name']} has no roll: read it (solo rule {move['name'].lower()}) and commit what it says")
+        elif move["kind"] == "progress":
+            track_id, progress = self._open_track(move["track"], track)
+            outcome = mechanics.progress_roll(progress["ticks"] // self.system["progress"]["ticks"], rng)
+            event = self.append("act", move=move_id, label=move["name"], track=track_id, track_name=progress["name"], outcome=outcome)
+        else:
+            chosen, value = self._stat_for(move, stat)
+            momentum = self.state["pc"]["tracks"]["momentum"]["value"]
+            outcome = mechanics.action_roll(value, adds, momentum, rng)
+            # A roll the player could still burn momentum on isn't the result yet: `open` holds back
+            # what it sets off (a clock that listens for a miss) until it stands (see _let_stand).
+            event = self.append("act", move=move_id, label=move["name"], stat=chosen, outcome=outcome,
+                                open=True if momentum > 0 and mechanics.burn(outcome, momentum) else None)
+        if not event.get("open"):
+            self._follow(_triggers(outcome), event["seq"], rng)
+        return event
+
+    def burn(self, rng=None):
+        """Burn momentum on the last action roll: the challenge dice under it are cancelled,
+        and momentum goes back to its reset."""
+        self._moves_only("burn momentum")
+        self._able("burn momentum")
+        last, momentum = self.state["last_check"], self.state["pc"]["tracks"]["momentum"]
+        if last is None or last["type"] not in ("act", "burn"):
+            raise SoloError("nothing to burn momentum on: make a move first (solo act <move>)")
+        elif last["type"] == "burn":
+            raise SoloError("that roll was already burned")
+        elif "track" in last:
+            raise SoloError("momentum is ignored on a progress roll, so it can't be burned")
+        elif momentum["value"] <= 0:
+            raise SoloError(f"momentum is {momentum['value']}: only positive momentum can be burned")
+        else:
+            burned = mechanics.burn(last["outcome"], momentum["value"])
+            if burned is None:
+                raise SoloError(f"burning momentum {momentum['value']} wouldn't change the roll: every challenge die the score doesn't beat is at or above it")
+            changes = {"pc": {"tracks": {"momentum": momentum["reset"]}, "tracks_was": {"momentum": momentum["value"]}}}
+            event = self.append("burn", of=last["seq"], move=last["move"], label=last["label"], stat=last.get("stat"), changes=changes, outcome=burned)
+            self._follow(_triggers(burned), event["seq"], rng)
+            return event
+
+    def _let_stand(self, rng=None):
+        """The story goes on, so a roll the player could have burned momentum on stands as it fell:
+        what it sets off happens now."""
+        seq = self.state["open_roll"]
+        if seq is not None:
+            self.append("settled", of=seq)
+            self._follow(_triggers(self.state["last_check"]["outcome"]), seq, rng)
+
+    def track_add(self, name, kind, rank=None):
+        """Start a progress track: a vow, a journey or a fight, at a rank."""
+        self._moves_only("keep a progress track")
+        progress, kind, rank = self.system["progress"], slug(kind), slug(rank or "")
+        if kind in progress.get("unranked", {}):
+            raise SoloError(f"every hero has one {kind} track already: solo track mark {kind}")
+        elif kind not in progress.get("kinds", {}):
+            raise SoloError(f"a track is one of: {', '.join(progress.get('kinds', {}))}")
+        elif rank not in progress["ranks"]:
+            raise SoloError(f"give the {kind} a rank: {', '.join(progress['ranks'])}")
+        else:
+            taken, track_id, number = self.state["progress"], slug(name) or kind, 1
+            while track_id in taken:
+                number += 1
+                track_id = f"{slug(name) or kind}_{number}"
+            return self.append("progress", action="add", id=track_id, name=name.strip(), kind=kind, rank=rank)
+
+    def track_mark(self, track_id, times=1):
+        """Mark progress on a track, `times` over. A mark fills what the track's rank is worth
+        (an unranked track, bonds, fills one tick)."""
+        track_id, track = self._track(track_id)
+        step = self.system["progress"]["ranks"][track["rank"]] if track["rank"] else 1
+        if times < 1:
+            raise SoloError("mark progress at least once")
+        else:
+            return self._progress(track_id, track, "mark", {"ticks": track["ticks"] + step * times}, times=times)
+
+    def track_set(self, track_id, ticks=None, rank=None):
+        """Correct a track: its ticks (a number sets them, "+4" or "-4" moves them) or its rank."""
+        track_id, track = self._track(track_id)
+        ranks = self.system["progress"]["ranks"]
+        if ticks is None and rank is None:
+            raise SoloError("set what? --ticks <n> or --rank <rank>")
+        elif rank is not None and (track["rank"] is None or slug(rank) not in ranks):
+            raise SoloError(f"{track['name']} has no rank to change" if track["rank"] is None else f"a rank is one of: {', '.join(ranks)}")
+        else:
+            now = {"ticks": _shift(ticks, track["ticks"]) if ticks is not None else track["ticks"],
+                   "rank": slug(rank) if rank is not None else track["rank"]}
+            return self._progress(track_id, track, "set", now)
+
+    def track_end(self, track_id, how):
+        """Close a track for good, saying how it ended (fulfilled, forsaken, won, lost)."""
+        track_id, track = self._track(track_id)
+        if track["kind"] in self.system["progress"].get("unranked", {}):
+            raise SoloError(f"{track['name']} goes on: mark it or set its ticks, it doesn't end")
+        else:
+            return self.append("progress", action="end", id=track_id, name=track["name"], how=how)
+
+    def _moves_only(self, action):
+        if self.system["family"] != "action-roll":
+            raise SoloError(f"{self.system['name']} has no moves to {action}: it rolls skills (solo check)")
+
+    def _move(self, name):
+        """A move by id or by name, or the ones it might have been."""
+        moves, key = self.system["moves"], slug(name)
+        found = key if key in moves else next((mid for mid, move in moves.items() if slug(move["name"]) == key), None)
+        if found is None:
+            close = get_close_matches(key, list(moves), n=3, cutoff=0.6)
+            raise SoloError(f"no move called {name!r}" + (f"; did you mean {', '.join(close)}?" if close else "") + f"; moves: {', '.join(moves)}")
+        return found, moves[found]
+
+    def _stat_for(self, move, stat):
+        """(stat, value) for a move's roll: the stat asked for, else the one the move lists,
+        else the highest or lowest of them when the move says so (or `stat` says: highest, lowest)."""
+        pc, options = self.state["pc"], move["stats"]
+        values = {name: pc["attributes"][name] if name in pc["attributes"] else pc["tracks"][name]["value"] for name in options}
+        choice = slug(stat) if stat else move.get("pick") or (options[0] if len(options) == 1 else None)
+        if choice in ("highest", "lowest"):
+            chosen = (max if choice == "highest" else min)(values, key=values.get)
+        elif choice in values:
+            chosen = choice
+        else:
+            raise SoloError(f"{move['name']} rolls +{', +'.join(options)}: say which with --stat (or --stat highest / lowest of them)")
+        return chosen, values[chosen]
+
+    def _track(self, name):
+        """(id, track) of a track still open, by its id or its name."""
+        tracks = {tid: t for tid, t in self.state["progress"].items() if not t["ended"]}
+        key = slug(name)
+        found = key if key in tracks else next((tid for tid, t in tracks.items() if slug(t["name"]) == key), None)
+        if found is None:
+            raise SoloError(f"no open track called {name!r}; open: {', '.join(tracks) or 'none (solo track add)'}")
+        return found, tracks[found]
+
+    def _open_track(self, kind, name):
+        """The track a progress move reads: the one named, or the only open one of its kind."""
+        tracks = {tid: t for tid, t in self.state["progress"].items() if t["kind"] == kind and not t["ended"]}
+        if name:
+            found, track = self._track(name)
+            if track["kind"] != kind:
+                raise SoloError(f"{track['name']} is a {track['kind']}, and this move reads a {kind}: {', '.join(tracks) or 'none open'}")
+            return found, track
+        elif len(tracks) == 1:
+            return next(iter(tracks.items()))
+        else:
+            raise SoloError(f"which {kind}? --track <id>; open: {', '.join(tracks) or 'none (solo track add)'}")
+
+    def _progress(self, track_id, track, action, now, **extra):
+        """Record a change to a track: what it held (`was`), what it holds (`now`, its ticks
+        kept between none and the full track) and how many boxes that fills."""
+        spec = self.system["progress"]
+        now = {**now, "ticks": _clamp(now["ticks"], 0, spec["boxes"] * spec["ticks"])}
+        return self.append("progress", action=action, id=track_id, name=track["name"], was={k: track[k] for k in now},
+                           now=now, boxes=now["ticks"] // spec["ticks"], part=now["ticks"] % spec["ticks"], **extra)
+
     def roll(self, expr, reason=None, rng=None):
         """Any dice expression; @track reads a track, as in 1d6+@stress."""
         return self.append("roll", expr=expr, reason=reason, result=dice.roll(self._substitute(expr), rng))
@@ -402,6 +585,8 @@ class Campaign:
         likelihood oracle, where doubles within the chaos factor set off a random event."""
         if npc is not None and npc not in self.state["npcs"]:
             raise SoloError(f"unknown npc {npc!r}")
+        elif self.system.get("oracle", {}).get("chart") == "odds":
+            return self._odds(question, likely, npc, kind, rng)
         level = (likely or (self._odds_for(npc) if npc else "even")).replace("_", " ")
         if self._chart():
             return self._fortune(question, level, kind or ("reaction" if npc and not likely else "yes_no"), npc, rng)
@@ -433,6 +618,22 @@ class Campaign:
         else:
             words = oracle.meaning(tables, rng)
         return self.append("meaning", question=(question or "").strip() or None, words=words)
+
+    def _odds(self, question, likely, npc, kind, rng):
+        """The odds oracle (Ironsworn): a d100 against the chance of a yes at the odds given,
+        or at the ones an NPC's attitude sets. A match (11, 22 ... 99, 100) is an extreme result or a twist."""
+        chances, levels = self.system["oracle"]["odds"], _odds_levels(self.system)
+        even = next(level for level, chance in chances.items() if chance == 50)
+        level = str(likely or (levels[self._odds_step(npc)] if npc else even)).replace("_", " ").lower()
+        level = even if level == "even" else level
+        if kind:
+            raise SoloError(f"{self.system['name']}'s oracle has no columns, so questions are yes or no (or --meaning)")
+        elif level not in chances:
+            raise SoloError(f"the odds are one of: {', '.join(levels)}")
+        else:
+            roll = dice.roll("1d100", rng)["total"]
+            return self.append("oracle", question=question, chart="odds", likely=level, chance=chances[level], roll=roll,
+                               answer="yes" if roll > 100 - chances[level] else "no", match=roll % 11 == 0 or roll == 100, npc=npc)
 
     def _chart(self):
         return self.system.get("oracle", {}).get("fortune") if self.system.get("oracle", {}).get("chart") == "fortune" else None
@@ -476,6 +677,7 @@ class Campaign:
         An ordinary move rolls a scene check against the chaos factor: the scene may be
         altered, or interrupted by a random event. Forced moves (a clock filled) aren't checked."""
         self._able("move")
+        self._let_stand(rng)
         here = self.state["scene"]
         every = packs.exits(self.adventure, here)
         key = slug(target)
@@ -535,7 +737,8 @@ class Campaign:
 
     def _voices(self, cause, rng=None):
         scene_id = self.state["scene"]
-        if self.state["pc"]["dead"] or self.state["pc"]["dying"]:
+        if self.state["pc"]["dead"] or self.state["pc"]["dying"] or self.system["family"] == "action-roll":
+            # A game of moves has no quiet skill rolls: what the hero notices is in the scene's text.
             return
         for index, spec in enumerate(self.adventure["scenes"][scene_id].get("voices", [])):
             if not spec.get("when") or packs.evaluate(spec["when"], self.state):
@@ -628,6 +831,7 @@ class Campaign:
 
     def commit(self, payload, rng=None):
         """Apply the consequences the agent proposes, after checking them against the packs."""
+        self._let_stand(rng)
         return self._record("commit", payload, rng)
 
     def rest(self, rest_id, heal=None, rng=None, tend=False):
@@ -1021,7 +1225,8 @@ class Campaign:
         outcome["pushable"] = False
         payload = {}
         if outcome["success"]:
-            recovered = dice.roll(str(spec.get("recover", "1")), rng)["total"]
+            # What the rulebook gives back when another saves a life, unless the solo rules say otherwise.
+            recovered = dice.roll(str(spec.get("recover") or self.system["dying"].get("recover", "1")), rng)["total"]
             payload = {"note": f"{pc['name']} saves their own life", "pc": {self.system["dying"]["track"]: f"+{recovered}"}}
         return self._record("save_self", payload, rng, label=label, outcome=outcome, saved=bool(outcome["success"]))
 
@@ -1062,6 +1267,19 @@ class Campaign:
             results.append({"skill": key, "name": skill["name"], "roll": total, "was": skill["value"], "now": skill["value"] + improves})
         return self.append("advance", results=results)
 
+    # Cutting a message -------------------------------------------------------------------
+
+    def strike(self, note=None):
+        """The player cuts the GM's last message (an X-card). The log stays append-only, so this is an event: the Book and
+        `solo recall` leave the message out, and the GM is told it was cut and what it had committed in that turn (a cut
+        doesn't undo those: the GM retracts them in the story if it has to)."""
+        last = next((e for e in reversed(self.events) if e["type"] == "said" and e["by"] == "gm" and e["seq"] not in self.state["struck"]), None)
+        if last is None:
+            raise SoloError("the GM hasn't said anything to cut")
+        began = max((e["seq"] for e in self.events if e["type"] == "said" and e["seq"] < last["seq"]), default=0)
+        turn = [f"#{e['seq']} {gm_line(e)}" for e in self.events if began < e["seq"] < last["seq"] and e["type"] in ("commit", "threat", "move")]
+        return self.append("struck", target=last["seq"], committed=turn or None, note=(note or "").strip() or None)
+
     # Table settings ---------------------------------------------------------------------
 
     def set_prefs(self, tone=None, lines=None, veils=None, clear=False):
@@ -1092,6 +1310,8 @@ class Campaign:
             return mechanics.d20_under(self._target(kind, key, attribute), boons, banes, rng)
         elif family == "d6-pool":
             return mechanics.d6_pool(self._pool(kind, key, attribute, boons - banes), self.system.get("success", 6), rng)
+        elif family == "action-roll":
+            raise SoloError(f"{self.system['name']} rolls moves, not skills: solo act <move> --stat <stat> (solo rule moves)")
         else:
             raise SoloError(f"unknown mechanics family {family!r}")
 
@@ -1361,13 +1581,16 @@ class Campaign:
         self._follow(triggers, event["seq"], rng)
 
     def _odds_for(self, npc_id):
-        """An NPC's attitude sets the odds; a kept or open promise raises them a step,
-        a broken one lowers them."""
+        return _ODDS[self._odds_step(npc_id)]
+
+    def _odds_step(self, npc_id):
+        """An NPC's attitude sets the odds, as a step from 0 (least likely) to 4; a kept or
+        open promise raises them a step, a broken one lowers them."""
         step = self.state["npcs"][npc_id]["attitude"] + 2
         for promise in self.state["promises"].values():
             if promise["npc"] == npc_id:
                 step += -1 if promise["status"] == "broken" else 1
-        return _ODDS[_clamp(step, 0, len(_ODDS) - 1)]
+        return _clamp(step, 0, len(_ODDS) - 1)
 
     def _substitute(self, expr):
         tracks = (self.state["pc"] or {}).get("tracks", {})
@@ -1631,6 +1854,13 @@ class Campaign:
                 raise SoloError(f"npc {npc_id!r} isn't in the adventure; give it a name to add it")
             is_new = current is None
             change = {"name": fields["name"], "new": True} if is_new else {}
+            named = str(fields.get("name") or "").strip()
+            if not is_new and named and named.casefold() != current["name"].casefold():
+                # A person keeps their name: two in the story is two people to the player. (This used to be dropped without a word.)
+                if not override:
+                    raise SoloError(f"npc {npc_id} is already called {current['name']}: a person keeps their name. If this is someone else, "
+                                    'give them an id of their own; if the story really names them now, add "override": "<reason>"')
+                change.update(name=named, name_was=current["name"])
             current = current or {"attitude": 0, "fate": "alive"}
             if "attitude" in fields:
                 attitude = _clamp(_shift(fields["attitude"], current["attitude"], ATTITUDES), -2, 2)
@@ -1806,22 +2036,30 @@ class Campaign:
         if isinstance(updates.get("tracks"), dict):
             # {"pc": {"tracks": {"hp": 3}}} can only mean the tracks themselves.
             updates = {**{k: v for k, v in updates.items() if k != "tracks"}, **updates["tracks"]}
+        # An impact cleared in this same commit no longer holds its track down.
+        cleared = [slug(c) for c in _listed(updates["conditions"].get("remove"))] if isinstance(updates.get("conditions"), dict) else []
         for key, value in updates.items():
             if key in pc["tracks"]:
                 track = pc["tracks"][key]
+                low = track.get("min", 0)
                 if isinstance(value, (int, float)) and not isinstance(value, bool) and value < 0:
                     # A track is never set below zero, so -3 can only mean "lose 3". Setting HP to 0
                     # instead would leave the hero dying over a scratch (a GM wrote exactly this).
                     warnings.append(f"read {key} {value} as a loss of {-int(value)}; write \"{int(value)}\" as text to move a value")
                     value = str(int(value))
                 wanted = _shift(value, track["value"])
-                result.setdefault("tracks", {})[key] = _clamp(wanted, 0, track["max"])
+                held = [c for c in pc["conditions"] if c not in cleared and self.system["conditions"].get(c) == key]
+                if held and wanted > track["value"]:
+                    # Wounded, shaken and unprepared (Ironsworn) keep health, spirit and supply from rising.
+                    warnings.append(f"{key} can't rise while {held[0]} is marked: clear it first")
+                    wanted = track["value"]
+                result.setdefault("tracks", {})[key] = _clamp(wanted, low, track["max"])
                 result.setdefault("tracks_was", {})[key] = track["value"]
                 if key == dying.get("track") and pc["dying"] and wanted < 0:
                     # Harm while dying: one failed death roll.
                     result["death_failures"] = 1
                 elif result["tracks"][key] != wanted:
-                    warnings.append(f"{key} stops at {result['tracks'][key]} (range 0-{track['max']})")
+                    warnings.append(f"{key} stops at {result['tracks'][key]} (range {low}-{track['max']})")
             elif key == "conditions":
                 # One name is a list of one: {"add": "dazed"} is dazed, not d, a, z, e, d.
                 add = [slug(c) for c in _listed(value.get("add"))]
@@ -1834,10 +2072,14 @@ class Campaign:
             elif key == "items":
                 result["items_add"] = _listed(value.get("add"))
                 result["items_remove"] = [i for i in _listed(value.get("remove")) if i in pc["items"]]
+            elif key == "abilities":
+                # What the hero has learned or lost: a heroic ability, an asset, or its upgrade ("Slayer, second ability").
+                result["abilities_add"] = [a for a in _listed(value.get("add")) if a not in pc["abilities"]]
+                result["abilities_remove"] = [a for a in _listed(value.get("remove")) if a in pc["abilities"]]
                 warnings += [f"{i} isn't carried" for i in _listed(value.get("remove")) if i not in pc["items"]]
             else:
                 money = " (coins and gear are items: {\"pc\": {\"items\": {\"add\": [\"30 silver\"]}}})" if key in _MONEY else ""
-                raise SoloError(f"pc has no {key!r}; use a track ({', '.join(pc['tracks'])}), conditions or items{money}")
+                raise SoloError(f"pc has no {key!r}; use a track ({', '.join(pc['tracks'])}), conditions, items or abilities{money}")
         return {k: v for k, v in result.items() if v}, warnings
 
 
@@ -1864,7 +2106,8 @@ def snapshot(system, state, adventure=None):
     """state.json: the folded state plus what the panel and the Book need derived from the
     packs (the weapons the hero carries, the codex, the route, the art), so they compute no
     rules. Nothing here is GM-only: unknown things are counted, never shown."""
-    view = {**{k: v for k, v in state.items() if k not in _GM_ONLY}, "kit": combat.kit(system, state["pc"]) if state["pc"] else None}
+    view = {**{k: v for k, v in state.items() if k not in _GM_ONLY}, "kit": combat.kit(system, state["pc"]) if state["pc"] else None,
+            "burn": burn_option(state)}
     if adventure is not None:
         # Counted, not listed: what they name would give the adventure away (`solo validate` says).
         view["pack_problems"] = len(packs.validate(system, adventure)) + len(state["problems"])
@@ -1878,6 +2121,20 @@ def snapshot(system, state, adventure=None):
             **portrait.art(system, adventure, state),
         )
     return view
+
+
+def burn_option(state):
+    """What burning momentum would do to the roll just made, when it would do anything:
+    {momentum, reset, hit}. The table and the GM's report offer the burn from this, so
+    neither computes a rule."""
+    last, momentum = state["last_check"], ((state["pc"] or {}).get("tracks") or {}).get("momentum")
+    burned = None
+    if last and last["type"] == "act" and "track" not in last and momentum and momentum["value"] > 0:
+        burned = mechanics.burn(last["outcome"], momentum["value"])
+    if burned:
+        return {"momentum": momentum["value"], "reset": momentum["reset"], "hit": burned["hit"]}
+    else:
+        return None
 
 
 def codex(adventure, state):
@@ -1965,6 +2222,8 @@ def _moments(event, state, adventure, seen, was_dead):
         say("threat", f"a threat looms: {event['label']}" if event["action"] == "add" else f"a threat came to pass: {event.get('text') or event['label']}")
     elif kind == "clock" and event.get("full") and not event.get("stopped"):
         say("clock", f"{event['label']} filled")
+    elif kind == "progress" and event["action"] in ("add", "end"):
+        say("progress", _progress_text(event))
     elif kind == "advance" and any(r["now"] > r["was"] for r in event["results"]):
         say("advance", "grew: " + ", ".join(f"{r['name']} {r['now']}" for r in event["results"] if r["now"] > r["was"]))
     elif kind == "due":
@@ -2045,7 +2304,7 @@ def _recallable(event, state):
     kind, changes = event["type"], event.get("changes") or {}
     npc_name = lambda npc_id: state["npcs"].get(npc_id, {}).get("name", npc_id)
     if kind == "said":
-        return [("you said" if event["by"] == "gm" else "the player said", event["text"])]
+        return [] if event["seq"] in state["struck"] else [("you said" if event["by"] == "gm" else "the player said", event["text"])]
     elif kind in ("oracle", "meaning"):
         answer = event.get("answer") or " / ".join(event.get("words", []))
         return [("the oracle", f"{event.get('question') or 'meaning'}: {answer}")]
@@ -2057,6 +2316,8 @@ def _recallable(event, state):
         return [("threat", event.get("text") or event["label"])]
     elif kind == "due":
         return [("came due", event["text"])]
+    elif kind == "progress" and event["action"] in ("add", "end"):
+        return [("a vow, road or fight", _progress_text(event))]
     items = []
     if kind == "stage":
         items += [(event["label"], " ".join(filter(None, [event.get("text"), event.get("note")])))]
@@ -2129,12 +2390,19 @@ def initial_state(system, adventure):
             # A heroic ability that pays for a push instead of a condition (Sole Survivor): name and cost.
             "push_ability": next(({"name": a.get("name", aid), "cost": ", ".join(f"{v} {t.upper()}" for t, v in a["push"].items())}
                                   for aid, a in system.get("abilities", {}).items() if a.get("push")), None),
-            "likelihood": ["unlikely", "even", "likely"] if system.get("oracle", {}).get("chart") == "fortune" else list(LIKELIHOOD),
+            "likelihood": (["unlikely", "even", "likely"] if system.get("oracle", {}).get("chart") == "fortune"
+                           else _odds_levels(system) if system.get("oracle", {}).get("chart") == "odds" else list(LIKELIHOOD)),
             # The fortune chart's columns (yes_no, number, scale ...), when the system has one.
             "fortune": [k for k in system.get("oracle", {}).get("fortune", {}) if k != "bands"] or None,
             # Death rolls and advancement, when the system has them.
             "dying": _dying_rules(system),
             "advancement": list(system.get("advancement", {}).get("mark_on", [])) if system.get("advancement") else None,
+            # action-roll systems: momentum's range, the progress tracks a game keeps (and what a
+            # mark fills at each rank) and the moves the hero can make, for the panel's buttons.
+            "momentum": system.get("momentum") or None,
+            "progress": system.get("progress") or None,
+            "moves": {move_id: {k: move[k] for k in ("name", "kind", "category", "stats", "pick", "track") if k in move}
+                      for move_id, move in system.get("moves", {}).items()} or None,
         },
         "scene": None,
         "scene_title": None,
@@ -2154,6 +2422,8 @@ def initial_state(system, adventure):
             for fid, f in adventure["factions"].items()
         },
         "promises": {},
+        # Progress tracks (vows, journeys, fights, bonds): {id: {name, kind, rank, ticks, ended}}.
+        "progress": {},
         # What the hero did that will come back: {id: text, npc, at, when, due_at, status, due ...}. GM only.
         "consequences": {},
         # How many times the hero has come into a scene, so a consequence can wait for the next time.
@@ -2172,6 +2442,8 @@ def initial_state(system, adventure):
         "chronicle": [],
         "rests": {},
         "last_check": None,
+        # The seq of an action roll the player could still burn momentum on, until the story goes on.
+        "open_roll": None,
         # 1-9: how likely surprises are. The GM raises it when the story runs away from the hero.
         "chaos": int(adventure.get("chaos", 5)),
         "combat": None,
@@ -2179,8 +2451,12 @@ def initial_state(system, adventure):
         "prefs": {"tone": "", "lines": [], "veils": []},
         # Set when the hero dies or the GM commits an "end".
         "ended": None,
-        # The GM's last words to the player, and whether the player has answered them.
+        # The GM's last words to the player, and whether the player has answered them. `gm_said` keeps the
+        # last few, so cutting the latest brings back the one before as "last said".
         "last_said": None,
+        "gm_said": [],
+        # The seqs of GM messages the player cut (an X-card): the Book and `solo recall` leave them out.
+        "struck": [],
         "awaiting_player": False,
         # The torch (or other light) burning now: {source, label, lit_at, burns}.
         "light": None,
@@ -2210,16 +2486,28 @@ def apply(state, event, adventure):
         # Speech stays out of the dice log: the panel shows it in its own card, the Book in its story.
         if event["by"] == "gm":
             state["last_said"] = {k: event[k] for k in ("seq", "at", "scene", "text")}
+            state["gm_said"] = (state["gm_said"] + [state["last_said"]])[-8:]
         else:
             state["last_player_said"] = event["text"]
         state["awaiting_player"] = event["by"] == "gm"
         _tell(state, {"seq": event["seq"], "kind": event["by"], "text": event["text"]})
+        return
+    if kind == "struck":
+        # The log keeps the words (it is append-only); the Book and the GM's memory of the table lose them.
+        state["struck"].append(event["target"])
+        state["story"] = [b for b in state["story"] if not (b.get("kind") == "gm" and b.get("seq") == event["target"])]
+        state["gm_said"] = [m for m in state["gm_said"] if m["seq"] != event["target"]]
+        state["last_said"] = state["gm_said"][-1] if state["gm_said"] else None
+        state["awaiting_player"] = False
         return
     fight = state["combat"]
     if kind == "created":
         state["pc"] = {**copy.deepcopy(event["pc"]), "marks": [], "dying": None, "dead": False}
         state["past"] = copy.deepcopy(event.get("past") or [])
         state["facts"].update(event.get("facts") or {})
+        # Every hero keeps the unranked tracks (bonds); a hero carried from another campaign brings theirs.
+        for track_kind, label in ((state["labels"]["progress"] or {}).get("unranked") or {}).items():
+            state["progress"][track_kind] = {"name": label, "kind": track_kind, "rank": None, "ticks": (event.get("kept") or {}).get(track_kind, 0), "ended": None}
         _enter(state, event["scene"], adventure)
     elif kind == "hero":
         old = state["pc"]
@@ -2241,6 +2529,17 @@ def apply(state, event, adventure):
         _apply_changes(state, event["changes"], event)
         state["last_check"] = event
         _mark(state, event)
+    elif kind == "act":
+        state["last_check"] = event
+        state["open_roll"] = event["seq"] if event.get("open") else None
+    elif kind == "burn":
+        _apply_changes(state, event["changes"], event)
+        state["last_check"] = event
+        state["open_roll"] = None
+    elif kind == "settled":
+        state["open_roll"] = None
+    elif kind == "progress":
+        _track(state["progress"], event)
     elif kind == "stage":
         _apply_changes(state, event["changes"], event)
     elif kind in ("commit", "harm"):
@@ -2346,7 +2645,7 @@ def apply(state, event, adventure):
         hidden_clock = state["clocks"][event["clock"]]["hidden"] and not omen or not event.get("text")
     # A consequence coming due is the GM's, and so is a commit with nothing the player can see
     # (facts, a consequence): the table's log would only say "commit".
-    gm_only = kind == "due" or (kind == "commit" and entry["text"] == "commit")
+    gm_only = kind in ("due", "settled") or (kind == "commit" and entry["text"] == "commit")
     if hidden_clock or hidden_cause or gm_only or (kind == "voice" and not event["heard"]):
         entry["hidden"] = True
         state["hidden"].append(event["seq"])
@@ -2457,6 +2756,9 @@ def _apply_changes(state, changes, event):
         if item in pc["items"]:
             pc["items"].remove(item)
     pc["items"] += update.get("items_add", [])
+    pc["abilities"] = [a for a in pc["abilities"] if a not in update.get("abilities_remove", [])] + update.get("abilities_add", [])
+    if update.get("conditions_add") or update.get("conditions_remove"):
+        _fit_momentum(state)
     state["time"] += changes.get("time", 0)
     state["clues"] += [c for c in changes.get("clues", []) if c not in state["clues"]]
     state["learned"] += [k for k in changes.get("learn", []) if k not in state["learned"]]
@@ -2473,6 +2775,24 @@ def _apply_changes(state, changes, event):
     _dying(state, event, failures=update.get("death_failures", 0))
 
 
+def _fit_momentum(state):
+    """Each impact lowers momentum's ceiling and its reset; what the hero holds stays under it."""
+    spec, momentum = state["labels"]["momentum"], state["pc"]["tracks"].get("momentum")
+    if spec and momentum:
+        momentum.update(mechanics.momentum_limits(spec, len(state["pc"]["conditions"])))
+        momentum["value"] = min(momentum["value"], momentum["max"])
+
+
+def _track(tracks, event):
+    """A progress event: a track started, marked, corrected or closed."""
+    if event["action"] == "add":
+        tracks[event["id"]] = {"name": event["name"], "kind": event["kind"], "rank": event.get("rank"), "ticks": 0, "ended": None}
+    elif event["action"] == "end":
+        tracks[event["id"]]["ended"] = event["how"]
+    else:
+        tracks[event["id"]].update(event["now"])
+
+
 def _tell(state, entry):
     if entry:
         state["story"] = (state["story"] + [entry])[-_STORY_SIZE:]
@@ -2481,7 +2801,7 @@ def _tell(state, entry):
 # What each event looks like in the Book. Commits are the GM's bookkeeping and stay out:
 # the GM narrates them. Everything here is already in the player's log.
 _STORY_KINDS = {
-    "check": "roll", "push": "roll", "death_roll": "roll", "rally": "roll", "save_self": "roll", "voice": "voice", "damage": "hit", "wound": "hit", "harm": "hurt",
+    "check": "roll", "push": "roll", "act": "roll", "burn": "roll", "progress": "event", "death_roll": "roll", "rally": "roll", "save_self": "roll", "voice": "voice", "damage": "hit", "wound": "hit", "harm": "hurt",
     "enemy": "foe", "ally": "hit", "oracle": "oracle", "meaning": "oracle", "fight": "fight", "join": "fight", "round": "fight",
     "fight_end": "fight", "rest": "event", "light": "light", "advance": "event", "mark": "event", "roll": "event",
     "table": "event", "clock": "clock", "threat": "event",
@@ -2516,6 +2836,9 @@ def _story_entry(state, event, entry):
             story["purpose"] = f"{event['attack']['label']} at {foe.get('name', event['attack']['target'])}"
         elif event.get("defend"):
             story["purpose"] = event["defend"]["how"]
+    elif kind in ("act", "burn"):
+        story.update(label=event["label"], burned=kind == "burn", outcome=event["outcome"],
+                     purpose=f"+{event['stat']}" if event.get("stat") else event.get("track_name"))
     elif kind in ("damage", "wound", "harm"):
         story.update(dealt=event["dealt"], down=event.get("down", False))
     if "seed" in event:
@@ -2540,6 +2863,16 @@ def _count_of(item, name):
 
 def _plural(word):
     return word + ("es" if word.endswith(("ch", "sh", "s", "x")) else "s")
+
+
+def _triggers(outcome):
+    """What a move's result sets off for the clocks that listen: check:strong_hit, check:weak_hit or check:miss, and check:match."""
+    return [f"check:{outcome['hit']}"] + (["check:match"] if outcome["match"] else [])
+
+
+def _odds_levels(system):
+    """The odds an odds oracle reads, least likely first."""
+    return [level for level, chance in sorted(system["oracle"]["odds"].items(), key=lambda level: level[1])]
 
 
 def _dying_rules(system):
@@ -2596,10 +2929,23 @@ def describe(event):
         purpose = f" (attack {attack['target']} with {attack['label']})" if attack else f" ({defend['how']})" if defend else ""
         text = ("pushed " if kind == "push" else "") + f"{event['label']}{purpose}: {_outcome_text(event)}"
         return text + (_push_cost(event.get("changes") or {}) if kind == "push" else "")
+    elif kind == "act":
+        return _act_text(event)
+    elif kind == "burn":
+        outcome = event["outcome"]
+        return (f"burned momentum {outcome['burned']} on {event['label']}: it cancels {len(outcome['cancelled'])} of the challenge dice, "
+                f"{_HITS[outcome['hit']]} now; momentum back to {event['changes']['pc']['tracks']['momentum']}")
+    elif kind == "progress":
+        return _progress_text(event)
+    elif kind == "settled":
+        return "the roll stands"
     elif kind == "roll":
         return f"rolled {event['expr']} = {event['result']['total']}" + (f" ({event['reason']})" if event.get("reason") else "")
     elif kind == "table":
         return f"{event['name']} ({event['total']}): {event['text']}"
+    elif kind == "oracle" and event.get("chart") == "odds":
+        text = f"asked \"{event['question']}\" (odds {event['likely']}, rolled {event['roll']}): {event['answer']}"
+        return text + (" (a match: an extreme result or a twist)" if event.get("match") else "")
     elif kind == "oracle" and event.get("chart") == "fortune":
         tilt = {"high": ", likely high", "low": ", likely low"}.get(event.get("tilt"), "")
         text = f"asked \"{event['question']}\" (fortune, {event['kind'].replace('_', '/')}{tilt}, rolled {event['roll']}): {event['answer']}"
@@ -2685,6 +3031,11 @@ def describe(event):
     elif kind == "said":
         first = " ".join(event["text"].split())
         return ("GM" if event["by"] == "gm" else "Player") + f': "{first[:77] + "..." if len(first) > 80 else first}"'
+    elif kind == "struck":
+        kept = event.get("committed") or []
+        return (f"the player cut your message #{event['target']}: it is gone from their Book. Don't repeat it or come back to it"
+                + (f" (they said: {event['note']})" if event.get("note") else "")
+                + (f". What you committed in that turn still stands unless you retract it in the story: {'; '.join(kept)}" if kept else ""))
     elif kind == "due":
         return f"a consequence comes due ({event['consequence']}): {event['text']}"
     else:
@@ -2704,6 +3055,41 @@ def gm_line(event):
     for consequence_id, change in changes.get("consequence", {}).items():
         notes.append(f"consequence {consequence_id} {change['status']}" + (f": {change['text']}" if change.get("text") else ""))
     return describe(event) + "".join(f" [for the GM: {note}]" for note in notes)
+
+
+_HITS = {"strong_hit": "a strong hit", "weak_hit": "a weak hit", "miss": "a miss"}
+
+
+def _act_text(event):
+    """A move's roll on one line: what it added up to, against which dice, and the result."""
+    outcome = event["outcome"]
+    against = f"against {outcome['challenge'][0]} and {outcome['challenge'][1]}"
+    if "progress" in outcome:
+        text = f"{event['label']} ({event['track_name']}): {outcome['progress']} boxes filled {against}"
+    else:
+        die = f"{outcome['action']} (cancelled by negative momentum)" if outcome["dulled"] else str(outcome["action"])
+        adds = f" + {outcome['adds']}" if outcome["adds"] else ""
+        text = f"{event['label']} +{event['stat']}: {die} + {outcome['stat']}{adds} = {outcome['score']} {against}"
+    return f"{text}: {_HITS[outcome['hit']]}" + (", and the dice match: a twist" if outcome["match"] else "")
+
+
+def filled(boxes, part):
+    """What a progress track holds: "4 boxes and 2 ticks", "1 tick", "nothing yet"."""
+    held = [f"{n} {word}{'es' if word == 'box' and n != 1 else 's' if n != 1 else ''}" for n, word in ((boxes, "box"), (part, "tick")) if n]
+    return " and ".join(held) or "nothing yet"
+
+
+def _progress_text(event):
+    name = event["name"]
+    if event["action"] == "add":
+        return f"{event['kind']} begun: {name}" + (f" ({event['rank']})" if event.get("rank") else "")
+    elif event["action"] == "mark":
+        return f"progress on {name}: {filled(event['boxes'], event['part'])}" + (f" (marked {event['times']} times)" if event["times"] > 1 else "")
+    elif event["action"] == "set":
+        changes = [f"{key} {event['was'][key]} -> {value}" for key, value in event["now"].items() if value != event["was"][key]]
+        return f"{name} set: {', '.join(changes) or 'no change'}"
+    else:
+        return f"{name} ends: {event['how']}"
 
 
 def _outcome_text(event):
@@ -2755,6 +3141,7 @@ def _commit_text(changes):
         parts.append(f"{track} {pc['tracks_was'][track]} -> {value}")
     parts += [f"+{c}" for c in pc.get("conditions_add", [])] + [f"-{c}" for c in pc.get("conditions_remove", [])]
     parts += [f"+{i}" for i in pc.get("items_add", [])] + [f"-{i}" for i in pc.get("items_remove", [])]
+    parts += [f"learns {a}" for a in pc.get("abilities_add", [])] + [f"loses {a}" for a in pc.get("abilities_remove", [])]
     if changes.get("time"):
         parts.append(f"{_duration(changes['time'])} pass")
     if changes.get("learn"):

@@ -5,7 +5,7 @@ import json
 
 from helpers import CampaignTest, Dice
 
-from solo import SoloError, cli, library, portrait
+from solo import SoloError, campaign, cli, gm, library, portrait
 
 
 class StoryTest(CampaignTest):
@@ -202,3 +202,60 @@ class FallenTest(CampaignTest):
         [hall] = [f for f in library.listing()["fallen"] if f["path"] == str(self.root)]
         self.assertEqual(hall["name"], "Ragna")
         self.assertTrue(any("╳" in line for line in hall["portrait"]))
+
+
+class CutTest(CampaignTest):
+    """The player's X-card: a cut message leaves the Book and recall, the log keeps it, the GM is told."""
+
+    def told(self, c):
+        c.say("Rain on the road. What do you do?")
+        c.say("I look for the gate.", by="player")
+        c.commit({"facts": {"road.spider": True}, "note": "a spider waits"})
+        c.say("A spider the size of a dog drops onto the road. What do you do?")
+
+    def test_a_cut_message_leaves_the_book_and_recall_but_not_the_log(self):
+        with self.session() as c:
+            self.told(c)
+            event = c.strike("no spiders")
+            self.assertEqual(event["target"], c.events[-2]["seq"])
+            self.assertNotIn("spider the size", " ".join(b.get("text", "") for b in c.state["story"]))
+            self.assertEqual(c.state["last_said"]["text"], "Rain on the road. What do you do?")  # the one before comes back
+            self.assertFalse(c.state["awaiting_player"])
+            self.assertIn("spider the size", " ".join(e.get("text", "") for e in c.events if e["type"] == "said"))  # append-only
+            self.assertNotIn("spider the size", cli.recall_text(c, "spider"))
+            self.assertEqual(campaign.fold(c.system, c.adventure, c.events), c.state)
+
+    def test_the_gm_is_told_what_was_cut_what_the_player_said_and_what_it_had_committed(self):
+        with self.session() as c:
+            self.told(c)
+            c.strike("no spiders")
+            digest = cli.resume_digest(c, book=True)
+            self.assertIn("## Cut by the player", digest)
+            self.assertIn("A spider the size of a dog", digest)  # the GM must know what to avoid
+            self.assertIn("The player said: no spiders", digest)
+            self.assertIn("road.spider = true", digest)  # what it committed stands unless retracted
+            self.assertIn("Rain on the road", digest.split("## Last said")[1])  # and the last message left is the one before
+            line = gm.since_gm(c)[-1]
+            self.assertIn("the player cut your message", line)
+            self.assertIn("Don't repeat it or come back to it", line)
+
+    def test_cutting_again_goes_one_message_further_back_and_nothing_to_cut_is_refused(self):
+        with self.session() as c:
+            with self.assertRaisesRegex(SoloError, "hasn't said anything to cut"):
+                c.strike()
+            self.told(c)
+            c.strike()
+            c.strike()
+            self.assertIsNone(c.state["last_said"])
+            with self.assertRaisesRegex(SoloError, "hasn't said anything to cut"):
+                c.strike()
+            self.assertEqual(len(c.state["struck"]), 2)
+            self.assertIn("this is the opening", cli.resume_digest(c))
+
+    def test_the_gm_speaking_again_is_awaiting_the_player_again(self):
+        with self.session() as c:
+            self.told(c)
+            c.strike()
+            c.say("Only wet cobbles. What do you do?")
+            self.assertTrue(c.state["awaiting_player"])
+            self.assertEqual(c.state["last_said"]["text"], "Only wet cobbles. What do you do?")

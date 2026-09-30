@@ -16,7 +16,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from PySide6.QtCore import QMetaObject, QObject, Q_ARG, QTimer, QUrl  # noqa: E402
+from PySide6.QtCore import QMetaObject, QObject, Q_ARG, QTimer, QUrl, SIGNAL  # noqa: E402
 from PySide6.QtGui import QGuiApplication  # noqa: E402
 from PySide6.QtQuick import QQuickView  # noqa: E402
 
@@ -28,8 +28,10 @@ def main(out):
     out.mkdir(parents=True, exist_ok=True)
     data = Path(tempfile.mkdtemp())
     scenario.play(data)
+    scenario.play_ironsworn(data)
     fight = json.loads((data / "fight.json").read_text())
     dead = json.loads((data / "dead.json").read_text())
+    ironsworn = json.loads((data / "ironsworn.json").read_text())
 
     app = QGuiApplication(sys.argv)
     view = QQuickView()
@@ -87,6 +89,22 @@ def main(out):
     shot("writing", 1500)
     root.setProperty("turn", {"status": "idle"})
 
+    # The X-card: one tap cuts the GM's last message; words typed there make it a line or a veil.
+    cuts = []
+    QObject.connect(book, SIGNAL("cut(QString,QString,QString)"), lambda note, line, veil: cuts.append((note, line, veil)))
+    if not book.property("canCut"):
+        errors.append("the cut link should show when the GM has spoken and isn't writing")
+    book.setProperty("cutting", True)
+    shot("cut", 500)
+    book.findChild(QObject, "cutInput").setProperty("text", "no fire")
+    QMetaObject.invokeMethod(book, "cutIt", Q_ARG("QVariant", "line"))
+    if cuts != [("no fire", "no fire", "")] or book.property("cutting"):
+        errors.append(f"the X-card gave {cuts}, and the panel {'stayed open' if book.property('cutting') else 'closed'}")
+    root.setProperty("turn", {"status": "writing", "text": "..."})
+    if book.property("canCut"):
+        errors.append("nothing to cut while the GM is writing")
+    root.setProperty("turn", {"status": "idle"})
+
     root.setProperty("game", dead)
     shot("dead", 700)
     shot("gravestone", 7000)  # the last death roll has settled, the stone has risen
@@ -109,6 +127,35 @@ def main(out):
         "successes": 3, "success": True, "triggers": ["panic"]}}
     QMetaObject.invokeMethod(dice, "show", Q_ARG("QVariant", pool))
     shot("dice-pool", 2600)
+    wait(5000)
+
+    # A game of moves (Ironsworn): momentum below and above zero, the vows and roads, and dice that
+    # are an action die and two challenge dice.
+    root.setProperty("game", ironsworn)
+    shot("ironsworn", 700)
+    book.setProperty("codexOpen", True)
+    shot("ironsworn-codex")  # the people of a pack with no art: named, with what they want and fear blanked out
+    book.setProperty("codexOpen", False)
+    moves = [b for b in ironsworn["story"] if b["kind"] == "roll"]
+    QMetaObject.invokeMethod(dice, "show", Q_ARG("QVariant", moves[-1]))  # a miss momentum could still save
+    shot("dice-miss", 2800)
+    wait(5000)
+    strong = {"kind": "roll", "label": "Strike", "purpose": "+edge", "outcome": {
+        "action": 5, "stat": 3, "adds": 1, "momentum": 4, "dulled": False, "score": 9, "challenge": [3, 4], "cancelled": [],
+        "beaten": 2, "hit": "strong_hit", "success": True, "match": False}}
+    QMetaObject.invokeMethod(dice, "show", Q_ARG("QVariant", strong))
+    shot("dice-strong", 2800)
+    wait(5000)
+    burned = {"kind": "roll", "label": "Face Danger", "purpose": "+edge", "burned": True, "outcome": {
+        "action": 1, "stat": 3, "adds": 0, "momentum": 6, "dulled": False, "score": 4, "challenge": [5, 8], "cancelled": [0],
+        "beaten": 1, "hit": "weak_hit", "success": True, "match": False, "burned": 6}}
+    QMetaObject.invokeMethod(dice, "show", Q_ARG("QVariant", burned))
+    shot("dice-burned", 2800)
+    wait(5000)
+    progress = {"kind": "roll", "label": "Fulfill Your Vow", "purpose": "Silence the bell", "outcome": {
+        "progress": 8, "score": 8, "challenge": [6, 6], "cancelled": [], "beaten": 2, "hit": "strong_hit", "success": True, "match": True}}
+    QMetaObject.invokeMethod(dice, "show", Q_ARG("QVariant", progress))
+    shot("dice-progress", 2800)
     if errors:
         print("QML warnings:\n" + "\n".join(errors))
         return 2

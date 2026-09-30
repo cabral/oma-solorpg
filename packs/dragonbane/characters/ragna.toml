@@ -2,7 +2,7 @@
 # character` writes the same shape as JSON from a Foundry actor; unlisted skills are untrained.
 name = "Ragna"
 conditions = []
-items = ["broadsword", "shield", "torch", "rope", "4 field rations", "6 silver"]
+items = ["broadsword", "small shield", "torch", "rope", "4 field rations", "6 silver"]
 # Veteran from the profession; Army of One, the solo rules' extra heroic ability for a hero alone.
 abilities = ["Unforgiving", "Veteran", "Army of One"]
 

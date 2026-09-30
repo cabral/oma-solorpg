@@ -1,0 +1,21 @@
+# A pre-made hero: a warrior who has seen too many winters of other people's wars.
+name = "Torvald Greyhand"
+conditions = []
+items = ["a sword", "a round shield", "mail worn thin at the elbows"]
+abilities = ["Swordmaster", "Shield-Bearer", "Veteran"]
+
+[info]
+role = "Warrior"
+
+[attributes]
+edge = 2
+heart = 2
+iron = 3
+shadow = 1
+wits = 1
+
+[tracks]
+health = 5
+spirit = 5
+supply = 5
+momentum = 2

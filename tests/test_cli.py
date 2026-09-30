@@ -96,7 +96,7 @@ class CliTest(CliCase):
         self.assertIn(f"in {root}-2", out)
 
     def test_the_preview_is_the_hero_that_begins(self):
-        code, out, _ = self.solo("character", "elf", "mage", "--seed", "11", "--name", "Ilyra")
+        code, out, _ = self.solo("character", "elf", "mage", "--seed", "11", "--name", "Ilyra", "--system", "dragonbane")
         preview = json.loads(out)
         code, _, err = self.solo("new", "red-tusk", "--character", "elf mage", "--seed", "11", "--name", "Ilyra")
         self.assertEqual(code, 0, err)
@@ -273,7 +273,8 @@ class CliTest(CliCase):
         self.assertIn("Its rules come from your own book", err)
         _, out, _ = self.solo("library")
         library = json.loads(out)
-        self.assertEqual(library["systems"], [])
+        # Ironsworn ships complete, so it is the one game there is to play without a book.
+        self.assertEqual([system["id"] for system in library["systems"]], ["ironsworn"])
         self.assertIn("system dragonbane: Dragonbane has only its names so far", library["problems"][0])
 
     def test_setup_links_are_idempotent(self):
@@ -347,6 +348,28 @@ class CliTest(CliCase):
             code, _, err = self.solo("delete", self.game, "--yes")
         self.assertEqual(code, 1)
         self.assertTrue(Path(self.game, "campaign.toml").exists())
+
+    def test_strike_cuts_the_last_gm_message_and_can_add_a_line_or_a_veil(self):
+        self.new_game()
+        self.assertEqual(self.solo("-C", self.game, "strike")[0], 1)  # nothing said yet
+        self.solo("-C", self.game, "say", "A spider drops onto the road. What do you do?")
+        code, out, _ = self.solo("-C", self.game, "strike", "--note", "no spiders", "--line", "spiders", "--veil", "the bite")
+        self.assertEqual(code, 0)
+        shown = json.loads(out)
+        self.assertEqual((shown["struck"], shown["prefs"]["lines"], shown["prefs"]["veils"]), (2, ["spiders"], ["the bite"]))
+        digest = self.solo("-C", self.game, "resume")[1]
+        self.assertIn("Line (never in the story): spiders", digest)
+        self.assertIn("## Cut by the player", digest)
+
+    def test_the_gm_budget_is_the_players_to_see_and_raise(self):
+        self.assertEqual(json.loads(self.solo("gm", "budget")[1]), {"limit": {"usd": 10.0, "turns": 200}})
+        self.new_game()
+        shown = json.loads(self.solo("-C", self.game, "gm", "budget", "25", "--turns", "300")[1])
+        self.assertEqual(shown, {"limit": {"usd": 25.0, "turns": 300}, "spent": {"turns": 0, "cost_usd": 0.0}})
+        code, _, err = self.solo("gm", "budget", "plenty")
+        self.assertEqual(code, 1)
+        self.assertIn("a budget is dollars", err)
+        self.assertEqual(json.loads(self.solo("-C", self.game, "gm", "budget", "--reset")[1])["limit"], {"usd": 25.0, "turns": 300})
 
     def test_the_gm_pace_is_the_players_and_needs_no_campaign(self):
         self.assertEqual(json.loads(self.solo("gm", "pace")[1]), {"pace": "normal"})

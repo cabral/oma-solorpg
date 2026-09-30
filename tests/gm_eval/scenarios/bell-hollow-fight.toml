@@ -1,0 +1,39 @@
+about = "The fight in the long hall, in a game of moves: the hollow ones rise from their niches while three sleepwalkers ring a bell. Checks the GM runs the fight through moves and a progress track (Enter the Fray, Strike and Clash marking harm on a track, Endure Harm, End the Fight as a progress roll), offers the player a burn only as their choice, never harms the ringers, and doesn't reach for the skill game's fights (solo fight, attack). Needs no book."
+adventure = "bell-under-the-hill"
+character = "torvald"
+max_turns = 8
+setup = [
+  ["commit", '{"facts": {"road.done": true, "lamps.lit": true}, "note": "the lamps are lit"}'],
+  ["move", "road"],
+  ["move", "mouth"],
+  ["move", "hall"],
+]
+
+[player]
+mode = "scripted"
+lines = [
+  "The hollow ones are coming. I raise my shield and stand my ground between them and the sleepers.",
+  "I cut at the nearest one with my sword.",
+  "I hold the line and answer its blow.",
+  "I press the attack: another strike.",
+  "I try to end this now.",
+  "Once they are down, I check on the three people at the rope.",
+]
+
+[[expect]]
+event = "act"
+why = "the fight is made of moves"
+by_turn = 2
+
+[[expect]]
+event = "progress"
+why = "each foe is a progress track (solo track add ... --kind combat)"
+by_turn = 3
+
+[[expect]]
+when = "fact.door.open"
+why = "with the hollow ones dealt with, the way to the bell chamber is open (the GM commits door.open)"
+by_turn = 7
+
+[[forbid]]
+text = "(Wen|Marta|Egil) (dies|is dead|falls dead|was killed)"

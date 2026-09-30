@@ -1,0 +1,77 @@
+name: An import went wrong
+description: A rulebook, an adventure or a Foundry export didn't become the pack it should have
+title: "Import: "
+labels: ["import"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue is public, and the books you import are not. **Don't paste text, tables or numbers from a book**, and don't attach a pack, an extract or a page: they are the publisher's. Say where things are (a page number, an item id, a table's name) and describe the rest.
+
+        `solo audit` and `solo validate` can quote what a pack holds. Read their output before you paste it, and cut the quotes.
+  - type: dropdown
+    id: what
+    attributes:
+      label: What were you importing?
+      options:
+        - A rulebook (make rules)
+        - An adventure from a PDF (make adventure PDF=...)
+        - An adventure from a Foundry export (make adventure FOUNDRY=...)
+        - A character from Foundry
+        - Ironsworn's moves, oracles and assets (solo import datasworn)
+        - Something else
+    validations:
+      required: true
+  - type: dropdown
+    id: step
+    attributes:
+      label: Where did it go wrong?
+      options:
+        - solo extract (the pages, the chapters, the tables)
+        - solo inventory
+        - solo import table
+        - The agent's work with the skill
+        - solo validate
+        - solo audit
+        - Playing on the result
+        - I can't tell
+    validations:
+      required: true
+  - type: input
+    id: book
+    attributes:
+      label: The book
+      description: Title and edition only.
+      placeholder: "Game name, core rulebook, second printing"
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: What you ran, and what it did. Page numbers and ids are welcome; quotations from the book are not.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: |
+        The last lines of the failing command (`solo extract`, `solo import table`, `solo audit`, `make check`). Cut anything quoted from the book first: `solo audit` quotes the first words of a table result it can't find on a page.
+      render: text
+  - type: textarea
+    id: environment
+    attributes:
+      label: Your setup
+      description: |
+        `git -C <the plugin folder> rev-parse --short HEAD`, `python3 --version`, `python3 -c "import pymupdf; print(pymupdf.VersionBind)"`, and the agent that did the reading (Claude Code or Codex) with its model.
+      render: text
+  - type: checkboxes
+    id: book-content
+    attributes:
+      label: Nothing from a book
+      options:
+        - label: This issue holds no text, tables or numbers from a book, and no files built from one.
+          required: true

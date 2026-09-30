@@ -1,0 +1,10 @@
+name = "Bel the warden"
+role = "The gate warden"
+attitude = "neutral"
+wants = "A quiet watch."
+voice = "Short sentences, a dry humour."
+
+[[secrets]]
+id = "cellar"
+text = "Under the well there is a cellar where Bel keeps the yard's stolen silver."
+reveal = "npc.warden.attitude >= friendly"

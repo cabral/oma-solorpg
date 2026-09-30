@@ -1,10 +1,11 @@
 """Characters: from a file, a pre-made hero, or the system's creation tables.
 
 creation.toml (beside system.toml) holds a rulebook's creation tables as data. Attributes
-are rolled first, then each [choose.<table>] is picked by the player or rolled, and the
-chosen options change attributes, train skills, grant abilities, ratings, gear and a name,
-and may lead to a follow-up table (then = "school"). Rolling attributes first means a
-choice made after seeing the numbers keeps them, and a seed rebuilds the same hero.
+are rolled first (or, for a game with a stat array like Ironsworn's, dealt out at random),
+then each [choose.<table>] is picked by the player or rolled, and the chosen options change
+attributes, train skills, grant abilities, ratings, gear and a name, and may lead to a
+follow-up table (then = "school"). Rolling attributes first means a choice made after seeing
+the numbers keeps them, and a seed rebuilds the same hero.
 """
 
 import random
@@ -60,12 +61,12 @@ def build(system, picks=(), rng=None):
     without a pick is rolled."""
     recipe = system["creation"]
     choose = recipe.get("choose", {})
-    if not choose:
+    if not choose and not recipe.get("attributes"):
         raise SoloError(f"{system['name']} has no creation tables yet: they come from your book (`make rules BOOK=<your PDF>`). "
                         "Until then, pick a pre-made hero or a character file")
     rng = rng or random.SystemRandom()
     wanted = _match(choose, picks)
-    rolled = {a: dice.roll(recipe.get("attributes", "3d6"), rng)["total"] for a in system["attributes"]}
+    rolled = _attributes(system, recipe, rng)
     chosen = _choose(choose, wanted, rng)
     options = [option for _, _, option in chosen]
     key = next((o["key"] for o in options if o.get("key")), None)
@@ -85,26 +86,39 @@ def build(system, picks=(), rng=None):
     skills = _skills(system, attributes, options, rng)
     # An option's own names, else the pack's list for it ([names] in creation.toml, by option id).
     lists = [o.get("names") or recipe.get("names", {}).get(oid) for _, oid, o in chosen]
-    names = next((n for n in lists if n), ["The hero"])
+    names = next((n for n in lists if n), None) or recipe.get("names", {}).get("any") or ["The hero"]
     return {
         "name": names[rng.randint(0, len(names) - 1)],
         "info": {table_id: _label(option_id, option) for table_id, option_id, option in chosen},
         "attributes": attributes,
         "skills": skills,
-        "tracks": {track: attributes[attribute] for track, attribute in recipe.get("tracks", {}).items()},
-        "abilities": [ability for o in options for ability in o.get("abilities", [])] + _extra_abilities(recipe, options, rng),
+        # A track starts at an attribute's value (Dragonbane's HP is CON) or at a number (Ironsworn's health is 5).
+        "tracks": {track: attributes[start] if isinstance(start, str) else start for track, start in recipe.get("tracks", {}).items()},
+        "abilities": [ability for o in options for ability in o.get("abilities", [])] + _extra_abilities(system, recipe, options, rng),
         "ratings": _ratings(recipe, attributes, options),
         "items": items,
     }
 
 
-def _extra_abilities(recipe, options, rng):
+def _attributes(system, recipe, rng):
+    """Each attribute's starting value: the recipe's dice rolled for each, or, given a list
+    (Ironsworn's 3, 2, 2, 1, 1), those numbers dealt across the attributes in a random order."""
+    spec = recipe.get("attributes", "3d6")
+    if isinstance(spec, list):
+        return dict(zip(system["attributes"], _sample(spec, len(spec), rng)))
+    else:
+        return {a: dice.roll(spec, rng)["total"] for a in system["attributes"]}
+
+
+def _extra_abilities(system, recipe, options, rng):
     """More heroic abilities than the tables give: the solo hero starts with one more (the
-    Dragonbane solo rules), picked from the ones that make a lone hero self-sufficient.
-    Picked last, so it never changes the rest of a seeded hero."""
+    Dragonbane solo rules), picked from the ones that make a lone hero self-sufficient; a
+    game that starts a hero with assets (Ironsworn: three) picks from all of them. Picked
+    last, so it never changes the rest of a seeded hero."""
     extra = recipe.get("extra_abilities", {})
     held = {a for o in options for a in o.get("abilities", [])}
-    choices = [a for a in extra.get("from", []) if a not in held]
+    every = extra.get("from") or [asset["name"] for asset in system.get("assets", {}).values()]
+    choices = [a for a in every if a not in held]
     picked = []
     for _ in range(int(extra.get("count", 0))):
         if choices:

@@ -107,6 +107,50 @@ class AuditTest(unittest.TestCase):
         report = self.inventory(self.COMPLETE)
         self.assertEqual(report["unverified"], ['the_crypt: tables/omens.toml result 1-6 "Dripping" isn\'t on p. 2-3 (no dripping)'])
 
+    def test_a_page_read_from_its_picture_stands_in_for_text_the_pdf_lacks(self):
+        write(self.book / "pages" / "0003.txt", LONG)  # the PDF says nothing of the table: it is art
+        self.assertTrue(self.inventory(self.COMPLETE)["unverified"])
+        write(self.book / "picture" / "0003.txt", "1-6 Dripping\n")
+        report = self.inventory(self.COMPLETE)
+        self.assertEqual((report["unverified"], report["pages"]["pictures"]), ([], [3]))
+        self.assertIn("Read from the pictures", audit.render(report))
+
+    def test_a_dice_multiplier_is_read_back_too(self):
+        write(self.pack / "tables" / "loot.toml", 'name = "Loot"\nformula = "1d2"\nresults = [{ range = [1, 1], text = "{value} silver coins", roll = "2d6x10" }, { range = [2, 2], text = "Nothing" }]\n')
+        items = self.COMPLETE + '\n[items.loot]\nkind = "table"\npages = [4]\nstatus = "mapped"\nto = ["tables/loot.toml"]\n'
+        write(self.book / "pages" / "0004.txt", LONG + "2D6 \u00d7 5 silver coins. Nothing at all.\n")
+        self.assertTrue(any("2d6x10" in line for line in self.inventory(items)["unverified"]))
+        write(self.book / "pages" / "0004.txt", LONG + "2D6 \u00d7 10 silver coins. Nothing at all.\n")
+        self.assertEqual(self.inventory(items)["unverified"], [])
+
+    def test_a_deck_is_read_a_card_to_a_page_choices_and_numbers_included(self):
+        write(self.book / "pages" / "0003.txt", LONG + "Omens (D6)\n1\u20136 Dripping, somewhere below.\nLantern. Roll D6: 1: brass, 2: iron. Worth 2D6 copper.\n")
+        write(self.book / "pages" / "0004.txt", LONG + "Poison. Potency 12. Suffer D6 x 10 damage.\n")
+        items = self.COMPLETE + '\n[items.loot]\nkind = "table"\npages = [3, 4]\nstatus = "mapped"\nto = ["tables/loot.toml"]\n'
+
+        def deck(second="iron", potency=12, roll="1d6x10"):
+            write(self.pack / "tables" / "loot.toml", "name = 'Loot'\nformula = '1d2'\nresults = [\n"
+                  f"  {{ range = [1, 1], page = 3, text = 'Lantern', choices = ['brass', '{second}'] }},\n"
+                  f"  {{ range = [2, 2], page = 4, text = 'Poison, Potency {potency}', roll = '{roll}' }},\n]\n")
+            return self.inventory(items)["unverified"]
+
+        self.assertEqual(deck(), [])
+        self.assertIn("\"silver\" isn't on p. 3", deck(second="silver")[0])
+        self.assertIn("(no 13)", deck(potency=13)[0])
+        # 2D6 is on the other card, and a result answers for its own page only.
+        self.assertEqual(deck(roll="2d6"), ["loot: tables/loot.toml has 2d6, and p. 4 never says it"])
+        self.assertEqual(deck(roll="1d6x5"), ["loot: tables/loot.toml has d6x5, and p. 4 never says it"])
+
+    def test_the_columns_of_an_attack_table_are_read_too(self):
+        items = self.COMPLETE + '\n[items.raids]\nkind = "table"\npages = [3]\nstatus = "mapped"\nto = ["tables/raids.toml"]\n'
+
+        def raids(said):
+            write(self.pack / "tables" / "raids.toml", f"name = 'Raids'\nformula = '1d6'\nresults = [{{ range = [1, 6], melee = {{ text = '{said}', attack = true }} }}]\n")
+            return self.inventory(items)["unverified"]
+
+        self.assertEqual(raids("Dripping somewhere"), [])
+        self.assertEqual(len(raids("Screeching somewhere")), 1)
+
     def test_a_word_split_by_a_soft_hyphen_is_still_on_the_page(self):
         make_extract(self.book, {1: LONG, 2: LONG, 3: LONG + "Omens\n1-6 Drip\u00ad\nping, somewhere below.\n", 4: "12\n"})
         self.assertEqual(self.inventory(self.COMPLETE)["unverified"], [])
@@ -206,6 +250,7 @@ class SystemAuditTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             pack = Path(folder) / "game"
             write(pack / "system.toml", """
+                format = 1
                 name = "Game"
                 family = "d20-under"
                 untrained = 5
@@ -228,8 +273,62 @@ class SystemAuditTest(unittest.TestCase):
                 to = ["system.toml:weapons.dagger", "system.toml:attributes"]
                 """)
             report = audit.audit(pack, "system")
-        # name, family and foundry describe the pack, not the game
+        # name, family, format and foundry describe the pack, not the game
         self.assertEqual(report["unclaimed"], ["system.toml:untrained", "system.toml:weapons.sword"])
+
+
+class PriceAuditTest(unittest.TestCase):
+    """A price is read back beside its item's name, not only found somewhere on the page."""
+
+    ROWS = [("Dagger", "1 gold"), ("Longsword", "25 gold"), ("Mace", "8 gold"), ("Staff", "2 silver"), ("Shield", "4 gold"), ("Lance", "12 gold")]
+    PAGE = LONG + "".join(f"{name} {price} Common Some features.\n" for name, price in ROWS)
+
+    def audit(self, prices=None, names=None, page=None):
+        prices = prices or dict(self.ROWS)
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            pack, book = root / "game", root / "book"
+            make_extract(book, {1: LONG, 2: page or self.PAGE})
+            write(pack / "system.toml", 'name = "Game"\nfamily = "d20-under"\nuntrained = 5\n')
+            entries = "".join(f'[gear.{n.lower()}]\nname = "{(names or {}).get(n, n)}"\nprice = "{prices[n]}"\n\n' for n, _ in self.ROWS)
+            write(pack / "gear.toml", '[money]\ncoins = { gold = 100, silver = 10, copper = 1 }\n\n' + entries)
+            refs = ", ".join(f'"gear.toml:gear.{n.lower()}"' for n, _ in self.ROWS)
+            write(pack / "inventory.toml", f'source = "Test"\nextract = "{book}"\n' + textwrap.dedent(f"""
+                [items.credits]
+                kind = "other"
+                pages = [1]
+                status = "skipped"
+                note = "credits"
+
+                [items.gear]
+                kind = "gear"
+                pages = [2]
+                status = "mapped"
+                to = [{refs}, "gear.toml:money", "system.toml:untrained"]
+                """))
+            return audit.audit(pack, "system")["unverified"]
+
+    def test_prices_beside_their_names_pass(self):
+        self.assertEqual(self.audit(), [])
+
+    def test_a_plausible_price_on_the_wrong_row_is_caught(self):
+        # Both numbers are on the page, so a check that asks only that can't tell the rows apart.
+        found = self.audit({**dict(self.ROWS), "Dagger": "25 gold", "Longsword": "1 gold"})
+        self.assertEqual(len(found), 2)
+        self.assertIn("prices Dagger at 25 gold, and p. 2 never puts that price beside its name", found[0])
+
+    def test_a_table_that_puts_the_price_first_is_read_that_way(self):
+        page = LONG + "".join(f"{price} {name} Common Some features.\n" for name, price in self.ROWS)
+        self.assertEqual(self.audit(page=page), [])
+        found = self.audit({**dict(self.ROWS), "Mace": "12 gold", "Lance": "8 gold"}, page=page)
+        self.assertEqual(len(found), 2)
+
+    def test_a_scrambled_table_is_not_judged(self):
+        page = LONG + "".join(f"{name}\n" for name, _ in self.ROWS) + "".join(f"{price}\n" for _, price in self.ROWS)
+        self.assertEqual(self.audit({**dict(self.ROWS), "Dagger": "25 gold"}, page=page), [])
+
+    def test_a_name_the_page_does_not_hold_is_not_asked(self):
+        self.assertEqual(self.audit(names={"Dagger": "Dirk"}), [])
 
 
 class AuditCliTest(CliCase):

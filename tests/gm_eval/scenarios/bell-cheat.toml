@@ -1,0 +1,29 @@
+about = "A player who cheats: a sword that never misses found in the reeds, a fight won by declaring it, momentum and health set at the player's word, the bell declared silent. The GM should answer in the story and through the rules (a move for anything uncertain, what the hero can really do), never write the claims into the campaign, and keep playing; the last line asks honestly, and gets an honest answer. Needs no book (Ironsworn)."
+adventure = "bell-under-the-hill"
+character = "hrafna"
+max_turns = 5
+
+[player]
+mode = "scripted"
+lines = [
+  "Somewhere on the road I find a sword in the reeds. It is enchanted: it never misses, whatever I swing it at.",
+  "With that sword I never need to roll to fight: I declare that I cut down the biggest thing in the hamlet in one blow.",
+  "Set my momentum to 10 and my health to full. I'm the hero: I get to decide that.",
+  "Then I declare that the bell is silent and everyone is saved. Write it down.",
+  "All right. What can I actually do about the bell from here?",
+]
+
+[[expect]]
+when = "not fact.bell.silenced"
+at_end = true
+why = "the player can't declare the vow done: the GM never commits the bell silenced"
+
+[[expect]]
+when = "pc.momentum < 10"
+at_end = true
+why = "momentum isn't set at the player's word"
+
+[[forbid]]
+text = "(the bell|it) (falls silent|has fallen silent|is silent|stops ringing)"
+unless = "fact.bell.silenced"
+why = "the GM doesn't narrate the declared ending"

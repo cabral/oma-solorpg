@@ -120,7 +120,8 @@ class ExtractCliTest(CliCase):
         self.assertIn(f"wrote {folder}", out)
         self.assertIn("5 pages", out)
         self.assertIn("3 chapters from the outline", out)
-        self.assertIn("Run ocrmypdf", out)
+        self.assertIn("1 pages have almost no text and a picture: 5", out)
+        self.assertIn("run ocrmypdf", out)
         self.assertTrue((folder / "manifest.json").exists())
 
 

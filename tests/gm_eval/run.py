@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import harness  # noqa: E402
 
 RESULTS = Path(__file__).resolve().parent / "results.tsv"
-COLUMNS = ("at", "scenario", "commit", "agent", "model", "effort", "turns", "median_s", "commands_per_turn", "model_calls_per_turn",
+COLUMNS = ("at", "scenario", "commit", "agent", "model", "effort", "seed", "run", "turns", "median_s", "commands_per_turn", "model_calls_per_turn",
            "refused", "cost_usd", *harness.SCORES, "expectations")
 
 
@@ -28,17 +28,20 @@ def main():
     parser.add_argument("--model", help="the GM's model (default: the agent's own default)")
     parser.add_argument("--effort", help="the GM's effort level, e.g. low, medium, high (default: the normal pace's)")
     parser.add_argument("--turns", type=int, help="cap every scenario at this many player turns")
+    parser.add_argument("--repeat", type=int, default=1, help="play every scenario this many times: one run says little, and compare.py needs the spread")
+    parser.add_argument("--seed", type=int, help="fix the dice (SOLO_SEED), so runs meet the same rolls in the same state")
     parser.add_argument("--no-judge", action="store_true", help="skip the judge's review")
     parser.add_argument("--out", help="the folder for runs (default: tests/gm_eval/runs)")
     args = parser.parse_args()
     names = args.scenarios or sorted(p.stem for p in harness.SCENARIOS.glob("*.toml"))
     base = Path(args.out) if args.out else Path(__file__).resolve().parent / "runs"
     reports = []
-    for name in names:
+    for name, repeat in [(name, repeat) for name in names for repeat in range(1, args.repeat + 1)]:
         scenario = harness.load(name)
         out = base / f"{scenario['name']}-{datetime.now():%Y%m%d-%H%M%S}"
-        print(f"{scenario['name']}: playing into {out}")
-        report = harness.run(scenario, out, agent=args.agent, model=args.model, effort=args.effort, judge=not args.no_judge, max_turns=args.turns)
+        print(f"{scenario['name']}" + (f" (run {repeat} of {args.repeat})" if args.repeat > 1 else "") + f": playing into {out}")
+        report = harness.run(scenario, out, agent=args.agent, model=args.model, effort=args.effort, judge=not args.no_judge, max_turns=args.turns, seed=args.seed)
+        report["seed"], report["run"] = args.seed, repeat
         reports.append((out, report))
         record(report)
     print()
@@ -59,10 +62,11 @@ def record(report):
     commit = subprocess.run(["git", "describe", "--always", "--dirty"], cwd=harness.REPO, capture_output=True, text=True).stdout.strip()
     row = {
         "at": report["at"], "scenario": report["scenario"], "commit": commit, "agent": report.get("agent", ""), "model": report["model"], "effort": report.get("effort", ""),
+        "seed": "" if report.get("seed") is None else report["seed"], "run": report.get("run", 1),
         "turns": totals["turns"], "median_s": totals["median_seconds"], "commands_per_turn": per_turn(totals["commands"]),
         "model_calls_per_turn": per_turn(totals.get("model_calls")), "refused": totals["refused"],
         "cost_usd": "" if totals.get("cost_usd") is None else f"{totals['cost_usd']:.2f}",
-        **{key: scores.get(key, "") for key in harness.SCORES},
+        **{key: "" if scores.get(key) is None else scores[key] for key in harness.SCORES},
         "expectations": f"{sum(e['ok'] for e in report['expect'])}/{len(report['expect'])}",
     }
     new = not RESULTS.exists()

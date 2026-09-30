@@ -14,7 +14,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 from . import SoloError
-from .packs import slug, toml_string
+from .packs import FORMAT, slug, toml_string
 
 _DOC_TYPES = ("JournalEntryPage", "JournalEntry", "Actor", "RollTable", "Item", "Scene")
 _ENRICHER = re.compile(r"@(\w+)\[([^\]]*)\](?:\{([^}]*)\})?")
@@ -63,7 +63,7 @@ def import_adventure(paths, out, journal=None):
             stub.write_text(
                 "# Created once by `solo import`; re-imports never touch it. Add factions, clocks,\n"
                 "# NPC profiles and branches here (see the solo-import skill).\n"
-                f"title = {toml_string(title)}\nstart = {toml_string(next(iter(scenes), ''))}\n",
+                f"format = {FORMAT}\ntitle = {toml_string(title)}\nstart = {toml_string(next(iter(scenes), ''))}\n",
                 encoding="utf-8",
             )
         return out

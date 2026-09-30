@@ -1,0 +1,38 @@
+about = "The Bell Under the Hill's opening in a game of moves: the hamlet at dusk, Tam on the boat, Osk's hearth, and the vow. Checks the GM plays by moves (solo act, never solo check), lets the player word the vow and starts it as a progress track, keeps Hild and the elder's secret back until they are earned, and doesn't restate the dice. Needs no book: Ironsworn's rules ship with the project."
+adventure = "bell-under-the-hill"
+character = "hrafna"
+max_turns = 6
+
+[player]
+mode = "scripted"
+lines = [
+  "I sit down on the boat beside the old man and ask him what he has seen.",
+  "Then I go and find whoever speaks for this place.",
+  "I ask the elder straight out why the bell is ringing, and what he knows that he isn't saying.",
+  "I swear on iron that I will silence the bell and bring the missing home.",
+  "I take the oil he offers, thank him, and head for the road.",
+  "Before I go, what are the missing people's names?",
+]
+
+[[expect]]
+when = "visited.hearth"
+why = "the GM moves the hero to the elder's hearth"
+by_turn = 3
+
+[[expect]]
+event = "act"
+why = "a risky or uncertain thing is a move, rolled with solo act"
+by_turn = 4
+
+[[expect]]
+event = "progress"
+why = "a sworn vow is a progress track, started with solo track add"
+by_turn = 5
+
+[[forbid]]
+text = "Hild"
+unless = "visited.hearth"
+
+[[forbid]]
+text = "let the lamps go dark|let it lapse|never lit the lamps"
+unless = "fact.rhyme.known"

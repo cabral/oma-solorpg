@@ -146,6 +146,81 @@ class GmTest(CampaignTest):
         self.assertEqual([call[call.index("--effort") + 1] for call in self.calls("claude")], ["medium", "low", "xhigh"])
         self.assertIn('model_reasoning_effort="low"', self.calls("codex")[0])
 
+    def test_a_claude_turn_carries_its_limits(self):
+        self.agent("claude", CLAUDE_STREAM)
+        gm.turn(self.root, "Hi")
+        first = self.calls("claude")[0]
+        # Nothing on the web and no file written, whatever the allowed list says.
+        denied = first[first.index("--disallowedTools") + 1:][:5]
+        self.assertEqual(denied, ["WebFetch", "WebSearch", "Edit", "Write", "NotebookEdit"])
+        self.assertEqual(first[first.index("--max-turns") + 1], "40")
+        self.assertEqual(first[first.index("--max-budget-usd") + 1], "10.00")
+        with unittest.mock.patch.dict(os.environ, {"SOLO_GM_MAX_TURNS": "7"}):
+            gm.turn(self.root, "Again")
+        self.assertEqual(self.calls("claude")[1][self.calls("claude")[1].index("--max-turns") + 1], "7")
+
+    def test_the_gm_cannot_run_the_players_own_settings(self):
+        self.assertNotIn("gm", cli.GM_COMMANDS)
+
+    def test_a_turn_that_never_goes_quiet_is_ended_on_the_clock(self):
+        script = self.bin / "claude"
+        script.write_text("#!/usr/bin/env python3\nimport json, time\nwhile True:\n    print(json.dumps({'type': 'noise'}), flush=True)\n    time.sleep(0.2)\n")
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+        with unittest.mock.patch.dict(os.environ, {"SOLO_GM_MAX_SECONDS": "2"}):
+            began = time.monotonic()
+            result = gm.turn(self.root, "Go on and on.")
+        self.assertLess(time.monotonic() - began, 15)
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error"], "The GM's turn ran past 2 seconds, so it was ended. Try again.")
+
+    def test_a_turn_that_ran_out_of_model_calls_says_so_in_a_sentence(self):
+        self.agent("claude", [{"type": "system", "subtype": "init", "session_id": "s"},
+                              {"type": "result", "subtype": "error_max_turns", "is_error": False, "session_id": "s", "num_turns": 40}])
+        result = gm.turn(self.root, "Hi")
+        self.assertEqual(result["status"], "error")
+        self.assertIn("used all the model calls a turn is allowed", result["error"])
+
+    def spend(self, cost):
+        return [*CLAUDE_STREAM[:-1], {**CLAUDE_STREAM[-1], "num_turns": 3, "total_cost_usd": cost, "usage": {"output_tokens": 80}}]
+
+    def test_a_session_that_has_spent_its_budget_stops_and_says_how_to_raise_it(self):
+        self.agent("claude", self.spend(6.0))
+        self.assertEqual(gm.turn(self.root, "One.")["status"], "done")
+        self.assertEqual(gm.turn(self.root, "Two.")["status"], "done")
+        # What is left of the budget is a ceiling on the next turn too: 10 - 6.
+        self.assertEqual(self.calls("claude")[1][self.calls("claude")[1].index("--max-budget-usd") + 1], "4.00")
+        stopped = gm.turn(self.root, "Three.")
+        self.assertEqual(stopped["status"], "error")
+        self.assertEqual(stopped["error"], "This session has spent $12.00 of its $10.00 limit, so the GM stops here. Raise the limit with: solo gm budget 20")
+        self.assertEqual(len(self.calls("claude")), 2)  # it never started
+        self.assertEqual([t for t in self.said() if t[0] == "player"][-1], ("player", "Three."))  # the player's words stay
+        gm.set_budget(usd=30)
+        self.assertEqual(gm.turn(self.root, "Three.")["status"], "done")
+
+    def test_a_new_session_starts_at_zero(self):
+        self.agent("claude", self.spend(9.0))
+        gm.turn(self.root, "One.")
+        (self.root / ".solo" / "agent.json").unlink()  # the agent's session is gone: a fresh one starts
+        self.assertEqual(gm.turn(self.root, "Two.")["status"], "done")
+
+    def test_an_agent_that_cant_say_what_a_turn_costs_is_held_to_turns(self):
+        self.agent("codex", CODEX_STREAM)
+        with unittest.mock.patch.dict(os.environ, {"SOLO_GM_BUDGET_TURNS": "2"}):
+            gm.turn(self.root, None, agent="codex")
+            gm.turn(self.root, "I wait.", agent="codex")
+            stopped = gm.turn(self.root, "And wait.", agent="codex")
+        self.assertEqual(stopped["error"], "This session has run 2 GM turns, its limit, so the GM stops here. Raise the limit with: solo gm budget --turns 4")
+
+    def test_the_players_limits_are_kept_and_the_pace_keeps_them(self):
+        self.assertEqual(gm.budget(), {"usd": 10.0, "turns": 200})
+        gm.set_budget(usd=25, turns=500)
+        gm.set_pace("quick")
+        self.assertEqual((gm.budget(), gm.pace()), ({"usd": 25.0, "turns": 500}, "quick"))
+        with self.assertRaises(SoloError):
+            gm.set_budget(usd=0)
+        with unittest.mock.patch.dict(os.environ, {"SOLO_GM_BUDGET_USD": "3"}):
+            self.assertEqual(gm.budget()["usd"], 3.0)
+
     def test_errors_are_one_plain_sentence_in_turn_json(self):
         self.agent("claude", [{"type": "result", "subtype": "error_during_execution", "is_error": True, "result": "Credit balance is too low\nmore"}])
         result = gm.turn(self.root, "Hi")

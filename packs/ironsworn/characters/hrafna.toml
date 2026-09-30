@@ -1,0 +1,22 @@
+# A pre-made hero, offered on the New adventure screen: a hunter with a hawk.
+name = "Hrafna Voss"
+conditions = []
+items = ["a hunting bow and a quiver of arrows", "a knife", "a leather gauntlet, and a hawk that answers to it"]
+# The assets the hero starts with: the first ability of each is theirs.
+abilities = ["Archer", "Hawk", "Wayfinder"]
+
+[info]
+role = "Hunter"
+
+[attributes]
+edge = 3
+heart = 1
+iron = 1
+shadow = 2
+wits = 2
+
+[tracks]
+health = 5
+spirit = 5
+supply = 5
+momentum = 2

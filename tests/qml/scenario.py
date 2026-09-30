@@ -1,4 +1,5 @@
-"""Real engine state for rendering the Book: The Red Tusk Hall, played to a fight."""
+"""Real engine state for rendering the Book: The Red Tusk Hall, played to a fight, and The Bell
+Under the Hill, played to a vow, a road and a roll momentum could still save."""
 
 import os
 import sys
@@ -9,7 +10,7 @@ HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE.parent.parent), str(HERE.parent)]
 os.environ.setdefault("XDG_STATE_HOME", tempfile.mkdtemp())
 
-from helpers import DRAGONBANE, RAGNA, RED_TUSK, Dice, install_rules  # noqa: E402, F401
+from helpers import DRAGONBANE, HRAFNA, IRONSWORN, RAGNA, RED_TUSK, ROOT, Dice, install_rules  # noqa: E402, F401
 from solo import campaign  # noqa: E402
 
 
@@ -47,6 +48,34 @@ def play(out):
         c.next_round(rng=Dice(1, 2))
         c.death_roll(rng=Dice(15))
     (Path(out) / "dead.json").write_text((root / "state.json").read_text())
+    return root
+
+
+def play_ironsworn(out):
+    """A vow sworn, a road under way, a wound, and a miss that a burn could still turn into a hit."""
+    root = campaign.create(Path(tempfile.mkdtemp()) / "game", IRONSWORN, ROOT / "examples" / "bell-under-the-hill", HRAFNA)
+    with campaign.session(root) as c:
+        c.say("Marrow Ford lies quiet under a sky the colour of slate. On the hill behind it, a bell tolls once. "
+              "An old man on an upturned boat doesn't look up. **What do you do?**")
+        c.say("I sit beside him and ask what he has seen.", by="player")
+        c.act("gather_information", rng=Dice(5, 2, 8))
+        c.commit({"pc": {"momentum": "+1"}, "npc": {"tam": {"attitude": "friendly", "memory": "sat beside the hero and talked to the water"}}})
+        c.say("Tam says nothing for a long moment. Then, to the water: *three nights, now.* What do you say?")
+        c.say("I swear to end it.", by="player")
+        c.act("swear_an_iron_vow", stat="heart", rng=Dice(6, 1, 3))
+        c.commit({"pc": {"momentum": "+2"}})
+        c.track_add("Silence the bell", "vow", "dangerous")
+        c.track_mark("silence_the_bell", times=2)
+        c.move("hearth", rng=Dice(3))
+        c.track_mark("bonds")
+        c.move("ford", rng=Dice(3))
+        c.move("road", rng=Dice(3))
+        c.track_add("The barrow road", "journey", "troublesome")
+        c.act("undertake_a_journey", rng=Dice(4, 3, 8))
+        c.track_mark("the_barrow_road")
+        c.commit({"pc": {"supply": "-1", "momentum": "+3", "conditions": {"add": ["shaken"]}}})
+        c.act("face_danger", stat="edge", rng=Dice(1, 5, 8))
+    (Path(out) / "ironsworn.json").write_text((root / "state.json").read_text())
     return root
 
 

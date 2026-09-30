@@ -1,5 +1,6 @@
 # A Year Zero test pack with Alien-style stress dice and panic. Placeholder text only.
 name = "Year Zero test pack"
+format = 1
 family = "d6-pool"
 success = 6
 

@@ -74,8 +74,8 @@ class RulesAndCharacterImportTest(unittest.TestCase):
         self.assertEqual(sheet["tracks"]["hp"], {"value": 12, "max": 14})
         self.assertEqual(sheet["info"], {"age": "adult", "kin": "Dwarf", "profession": "Fighter"})
         self.assertEqual(sheet["items"], ["Broadsword"])
-        # Foundry says "none" for the magic school's attribute; the system pack knows it's WIL
-        self.assertEqual(sheet["skills"]["elementalism"]["attribute"], "wil")
+        # Foundry says "none" for the magic school's attribute; the system pack knows it's INT (the core rules, p. 28)
+        self.assertEqual(sheet["skills"]["elementalism"]["attribute"], "int")
 
 
 class MarkdownTest(unittest.TestCase):

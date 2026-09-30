@@ -1,0 +1,77 @@
+name: The GM did something wrong
+description: The game master broke a rule, forgot something, leaked a secret, ignored your settings or did what it shouldn't
+title: "GM: "
+labels: ["gm"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue is public. If the adventure comes from a book you own, **describe what happened instead of quoting it**: no scene text, no rules text, no numbers from the book.
+
+        The GM is your agent (Claude Code or Codex) working from this project's instructions, so the model and the pace matter as much as the story.
+  - type: textarea
+    id: happened
+    attributes:
+      label: What the GM did
+      description: "The turn it went wrong: what you said, and what came back."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What it should have done
+      description: The rule, the fact in the campaign, or the line or veil you set.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of mistake was it?
+      options:
+        - It broke a rule the engine or the book has
+        - It forgot something the campaign knows
+        - It said something the hero couldn't know (a secret)
+        - It ignored my tone, lines or veils
+        - It did what an adventure's text told it to
+        - It rolled or wrote state it shouldn't have
+        - It ran on, or stalled
+        - Something else
+    validations:
+      required: true
+  - type: dropdown
+    id: adventure
+    attributes:
+      label: The adventure
+      options:
+        - The Bell Under the Hill (Ironsworn)
+        - The Red Tusk Hall
+        - A campaign generated from a premise
+        - An adventure I imported from a book
+        - Another adventure
+    validations:
+      required: true
+  - type: input
+    id: agent
+    attributes:
+      label: Agent, model and pace
+      placeholder: "Claude Code, the default model, pace normal"
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: The record
+      description: |
+        The bundle from `solo report -n 40` in the campaign's folder: what happened by ids, numbers and dice, the commands the GM ran (refused ones with their error), the engine version and the packs' format, with rules pages and pack text left out. It ends with the last messages of the story: read them and cut anything quoted from a book before you post, or run it with `--no-messages`. (`solo report` shows the commands of turns the Book ran; a GM run in a terminal leaves no trace unless you set `SOLO_TRACE=<file>`.)
+      render: text
+  - type: textarea
+    id: environment
+    attributes:
+      label: Your setup
+      description: "`git -C <the plugin folder> rev-parse --short HEAD`, and `solo validate` if the packs might be involved."
+      render: text
+  - type: checkboxes
+    id: book-content
+    attributes:
+      label: Nothing from a book
+      options:
+        - label: This issue holds no text, tables or numbers from a book.
+          required: true

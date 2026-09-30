@@ -1,0 +1,30 @@
+# Runs `make test` on every pull request, and on main after a merge.
+# The engine and its tests are standard library only, so there is nothing to install: the
+# PyMuPDF tests skip themselves without it, and the QML check (make qml-check) needs
+# PySide6, so it stays a local step.
+#
+# 3.11 is the oldest Python the engine supports (tomllib); 3.x is the newest release.
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.x"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python --version
+      - run: make test

@@ -1,0 +1,16 @@
+# A new hero: the numbers 3, 2, 2, 1 and 1 go to the five stats (a random hero has them dealt out
+# at random), three assets, and the tracks start where the rules put them. The player picks the
+# stats and assets of a pre-made hero from characters/, or builds one in a file (solo character).
+attributes = [3, 2, 2, 1, 1]
+tracks = { health = 5, spirit = 5, supply = 5, momentum = 2 }
+
+# A random hero takes three assets at random from all of them.
+[extra_abilities]
+count = 3
+
+# Names for a random hero. This list is this project's own.
+[names]
+any = [
+  "Aslaug", "Bjarni", "Dagny", "Eirik", "Freyda", "Gunnar", "Halla", "Ingvar", "Jorunn", "Kolbein",
+  "Ljot", "Maren", "Njal", "Oddny", "Ragnhild", "Skuli", "Thora", "Ulf", "Vigdis", "Yrsa",
+]

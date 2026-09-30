@@ -1,0 +1,80 @@
+# Ironsworn, as this project ships it. Unlike Dragonbane's pack this one is complete: Ironsworn's
+# moves, oracles and assets are published under the Creative Commons Attribution 4.0 license, so
+# they live here with credit, and a campaign can start without any book.
+#
+#   moves/, tables/, assets/   generated from Datasworn by `solo import datasworn` (see NOTICE.md
+#                              for what they are and what was left out); don't edit them, run the
+#                              import again
+#   system.toml, creation.toml, characters/   this project's own
+#
+# The engine reads the family "action-roll": an action die and a stat against two challenge dice,
+# momentum, and progress tracks. docs/PACK_FORMAT.md lists what each section below means.
+name = "Ironsworn"
+format = 1
+family = "action-roll"
+credit = "This work is based on Ironsworn, created by Shawn Tomkin, and licensed for our use under the Creative Commons Attribution 4.0 International License (https://creativecommons.org/licenses/by/4.0/)."
+
+[attributes]
+edge = "Edge"
+heart = "Heart"
+iron = "Iron"
+shadow = "Shadow"
+wits = "Wits"
+
+# Health, spirit and supply run from 0 to 5. Momentum runs below zero, so [momentum] says how far.
+[tracks]
+health = "Health"
+spirit = "Spirit"
+supply = "Supply"
+momentum = "Momentum"
+
+# Impacts. Each one lowers momentum's ceiling and its reset by one. The value is the track it keeps
+# from rising while it is marked ("" for the ones that only weigh on momentum).
+[conditions]
+wounded = "health"
+shaken = "spirit"
+unprepared = "supply"
+encumbered = ""
+maimed = ""
+corrupted = ""
+cursed = ""
+tormented = ""
+
+[momentum]
+min = -6
+max = 10
+reset = 2
+
+# A progress track is ten boxes of four ticks. What one mark fills depends on the rank.
+[progress]
+boxes = 10
+ticks = 4
+kinds = { vow = "Vow", journey = "Journey", combat = "Fight" }
+# Every hero keeps these, with no rank: a mark is one tick.
+unranked = { bonds = "Bonds" }
+
+[progress.ranks]
+troublesome = 12
+dangerous = 8
+formidable = 4
+extreme = 2
+epic = 1
+
+# Game time. Ironsworn keeps none by the clock; clocks and adventures can still count hours and days.
+[time]
+hour = 3600
+day = 86400
+
+# The yes/no oracle: the chance of a yes at each odds, on a d100. (The import prints the numbers
+# the book's own tables give, so a change there shows.) The inspiration words are two tables to roll.
+[oracle]
+chart = "odds"
+scene_checks = false
+inspiration = ["action", "theme"]
+
+[oracle.odds]
+"small chance" = 10
+unlikely = 25
+"50/50" = 50
+likely = 75
+"almost certain" = 90

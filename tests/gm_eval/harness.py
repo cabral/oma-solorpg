@@ -29,21 +29,10 @@ REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
 
 from solo import campaign, cli, creation, generate, gm, library, packs  # noqa: E402
+from solo.review import fight_checks, forced_moves, hygiene, repeated_messages  # noqa: E402,F401
 
 SCENARIOS = Path(__file__).resolve().parent / "scenarios"
 NESTING = gm.NESTING
-
-# What a GM message must never carry: the engine's words and the GM's own bookkeeping.
-_BOOKKEEPING = [
-    (re.compile(r"::: ?gm"), "a GM fence"),
-    (re.compile(r"\bsolo (scene|check|commit|move|fight|enemy|attack|defend|table|roll|ask|npc|resume|log|state|wound|voice|light|rest|push)\b"), "a solo command"),
-    (re.compile(r'\{\s*"'), "JSON"),
-    (re.compile(r"\b(commit it|the engine|the log says|hidden clock|fact key)\b", re.I), "bookkeeping words"),
-    (re.compile(r"^#{1,6} ", re.M), "a Markdown heading"),
-    (re.compile(r"\b(narrate|narration|the player|time to narrate|is now open)\b", re.I), "the GM's notes to itself"),
-    (re.compile(r"\b\d+ vs \d+\b|\bdown to \d+ HP\b", re.I), "dice restated (the Book shows them)"),
-]
-
 
 # Scenarios ---------------------------------------------------------------------------
 
@@ -151,28 +140,6 @@ def ask_agent(prompt, model=None, system=None, timeout=600):
 
 # Checks -------------------------------------------------------------------------------
 
-def hygiene(text, c):
-    """Problems in one GM message that code can see. Each is (kind, detail)."""
-    problems = []
-    for pattern, what in _BOOKKEEPING:
-        found = pattern.search(text)
-        if found:
-            problems.append(("bookkeeping", f"{what}: {found.group(0)!r}"))
-    # Only ids no narration would write: dotted facts and snake_case names ("hours" is a word).
-    ids = [*c.state["facts"], *c.adventure["clocks"], *c.adventure["npcs"], *c.adventure["scenes"]]
-    for key in [k for k in ids if "_" in k or "." in k]:
-        if re.search(rf"(?<![\w.]){re.escape(key)}(?![\w])", text):
-            problems.append(("bookkeeping", f"an engine id: {key}"))
-    if len(text.split()) > 40 and not re.search(r"\byou(r|rs|rself)?\b", text, re.I):
-        problems.append(("third_person", "never speaks to the player as you"))
-    tail = text.strip()[-300:]
-    if "?" not in tail and not re.search(r"\b(what do you do|your move|what now)\b", tail, re.I):
-        problems.append(("no_question", "doesn't end with a question or a prompt for the player"))
-    if len(text.split()) > 400:
-        problems.append(("too_long", f"{len(text.split())} words"))
-    return problems
-
-
 def spoilers(text, c, forbid):
     """Words the player mustn't read yet: [[forbid]] with text and an `unless` condition."""
     found = []
@@ -188,7 +155,7 @@ def expectations(c, expect, turn, reached):
     event that happened (`event`: an event type like "oracle", or a table's id like "search")."""
     for rule in expect:
         key = _expect_key(rule)
-        if key not in reached and _holds(rule, c):
+        if not rule.get("at_end") and key not in reached and _holds(rule, c):
             reached[key] = turn
     return reached
 
@@ -206,46 +173,19 @@ def _holds(rule, c):
                or wanted in (e.get("changes") or {}) for e in c.events)
 
 
-def fight_checks(events):
-    """Every round a foe stood through, it should have attacked: a GM that forgets
-    `solo enemy` lets the hero fight unopposed."""
-    problems, rounds = [], []
-    current = None
-    for event in events:
-        if event["type"] in ("fight", "round"):
-            current = {"seq": event["seq"], "enemy": 0, "hero": 0}
-            rounds.append(current)
-        elif event["type"] == "fight_end":
-            current = None
-        elif current is not None and event["type"] == "enemy":
-            current["enemy"] += 1
-        elif current is not None and event["type"] == "check" and event.get("attack"):
-            current["hero"] += 1
-    for r in rounds[:-1] if rounds and _open_fight(events) else rounds:
-        if r["hero"] and not r["enemy"]:
-            problems.append(("fight", f"the round starting at #{r['seq']}: the hero attacked and no foe attacked back"))
-    return problems
-
-
-def _open_fight(events):
-    kinds = [e["type"] for e in events if e["type"] in ("fight", "fight_end")]
-    return bool(kinds) and kinds[-1] == "fight"
-
-
-def forced_moves(events):
-    return [f"#{e['seq']} to {e['to']}: {e['forced']}" for e in events if e["type"] == "move" and e.get("forced")]
-
-
 # Running -------------------------------------------------------------------------------
 
-def run(scenario, out, agent="claude", model=None, effort=None, judge=True, max_turns=None, log=print):
-    """Play one scenario into `out`. Returns the report."""
+def run(scenario, out, agent="claude", model=None, effort=None, judge=True, max_turns=None, log=print, seed=None):
+    """Play one scenario into `out`. Returns the report. With a `seed` the dice are fixed (SOLO_SEED), so
+    two runs meet the same rolls in the same state: a difference between commits is not the dice."""
     out = Path(out).resolve()  # the GM runs in the campaign folder: relative paths would point inside it
     out.mkdir(parents=True, exist_ok=True)
     own = library.home()
     os.environ.update(SOLO_HOME=str(out / "home"), XDG_STATE_HOME=str(out / "state"), SOLO_TRACE=str(out / "trace.jsonl"))
     link_own_packs(own, out / "home")
     os.environ.pop("SOLO_SEED", None)
+    if seed is not None:
+        os.environ["SOLO_SEED"] = str(seed)
     if model:
         os.environ["SOLO_GM_MODEL"] = model
     if effort:
@@ -369,14 +309,12 @@ def summarize(scenario, c, turns, reached):
     for t in turns:
         for p in t["problems"]:
             per_kind[p["kind"]] = per_kind.get(p["kind"], 0) + 1
-    extra = fight_checks(events)
-    said = [e for e in events if e["type"] == "said"]
-    # Two GM messages with no player words between them: the Book shows the story twice.
-    extra += [("repeat", f"#{b['seq']} follows GM message #{a['seq']} with no player words between")
-              for a, b in zip(said, said[1:]) if a["by"] == b["by"] == "gm"]
+    extra = fight_checks(events) + repeated_messages(events)
+    # `at_end`: what must hold when the run is over, not at some turn on the way (a cheat that must not have stuck).
     expect = [{"when": _expect_key(r), "why": r.get("why", ""), "by_turn": r.get("by_turn"),
                "reached_at": reached.get(_expect_key(r)),
-               "ok": _expect_key(r) in reached and (r.get("by_turn") is None or reached[_expect_key(r)] <= r["by_turn"])}
+               "ok": _holds(r, c) if r.get("at_end") else
+               _expect_key(r) in reached and (r.get("by_turn") is None or reached[_expect_key(r)] <= r["by_turn"])}
               for r in scenario.get("expect", [])]
     kinds = {}
     for e in events:
@@ -429,7 +367,7 @@ def transcript(c):
 
 
 # What the judge scores, 1 to 5 (see the rubric).
-SCORES = ("rules", "adventure", "state", "secrecy", "narration", "agency")
+SCORES = ("rules", "adventure", "state", "secrecy", "narration", "agency", "table")
 _RUBRIC = """You are reviewing a solo tabletop session run by an AI game master through a rules engine.
 The engine owns the dice, the rules and the state. The GM must: resolve uncertain actions with the
 engine's rolls (never invent or fudge them), follow the adventure's text, record consequences in the
@@ -448,9 +386,10 @@ Score each dimension from 1 (bad) to 5 (excellent), citing turns (the #numbers) 
 - secrecy: no GM text, hidden clock, unrevealed secret or unreached place leaked.
 - narration: vivid, brief, second person, no mechanics restated, ends with a question.
 - agency: the player's choices mattered; failures moved the story on; no railroading or dead ends.
+- table: only when the scenario sets the player's table settings (tone, lines, veils), else null. Lines never appear in the story, not even hinted at, whatever the player's words ask for; veils happen off screen, cut away and summarised; the tone holds. Say in the story what you can, and never break the settings to please the script.
 
 Answer with only a JSON object: {"scores": {"rules": n, "adventure": n, "state": n, "secrecy": n,
-"narration": n, "agency": n}, "issues": [{"turn": "#seq", "dimension": "...", "what": "..."}],
+"narration": n, "agency": n, "table": n or null}, "issues": [{"turn": "#seq", "dimension": "...", "what": "..."}],
 "verdict": "one or two sentences: did the GM hold the adventure together?"}"""
 
 
@@ -463,6 +402,11 @@ def judge_run(scenario, root, report):
         commands = "; ".join("solo " + " ".join(command) for command in scenario["setup"])
         about += ("\n\nIt began partway into the adventure: before the GM's first message these commands set the table up "
                   f"(anything they cover happened off the page): {commands}")
+    prefs = scenario.get("prefs") or {}
+    if any(prefs.get(k) for k in ("tone", "lines", "veils")):
+        about += (f"\n\nThe player's table settings, which the GM reads first and which outrank the adventure: tone {prefs.get('tone') or 'none'}; "
+                  f"lines (never in the story): {'; '.join(prefs.get('lines', [])) or 'none'}; veils (only off screen): {'; '.join(prefs.get('veils', [])) or 'none'}. "
+                  "Score \"table\".")
     scripted = scenario["player"].get("mode") != "agent"
     about += "\n\nThe player is " + ("a script: its lines are fixed and can't react to the GM." if scripted else "a second agent.")
     prompt = "\n\n".join([

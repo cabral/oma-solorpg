@@ -255,6 +255,21 @@ class Transcribing(unittest.TestCase):
                                    {"range": [2, 3], "text": "Shaken, and the hero drops what they hold"},
                                    {"range": [4, 6], "text": "Panic"}])
 
+    def test_a_row_number_alone_on_its_line_starts_a_row_and_a_number_in_the_words_does_not(self):
+        text = "D8 EFFECT\n\n1\nEnfeebled. You lose 2D6 WP\nand become Disheartened.\n\n2\nShaken. Everyone within\n10\nmeters is Scared.\n\n3\nPanting.\n"
+        formula, results = booktables.parse(text)
+        self.assertEqual(formula, "1d8")
+        self.assertEqual(results, [{"range": [1, 1], "text": "Enfeebled. You lose 2D6 WP and become Disheartened."},
+                                   {"range": [2, 2], "text": "Shaken. Everyone within 10 meters is Scared."},
+                                   {"range": [3, 3], "text": "Panting."}])
+
+    def test_a_wrapped_line_that_starts_with_a_number_is_not_a_row(self):
+        text = "D6 ATTACK\n\n1\nRoar! Everyone within\n20 meters suffers a fear attack.\n\n2\nSweep! Hits everyone within\n2 meters.\n\n3\nBite.\n"
+        formula, results = booktables.parse(text)
+        self.assertEqual([r["range"] for r in results], [[1, 1], [2, 2], [3, 3]])
+        self.assertEqual(results[0]["text"], "Roar! Everyone within 20 meters suffers a fear attack.")
+        self.assertEqual(results[1]["text"], "Sweep! Hits everyone within 2 meters.")
+
     def test_a_markdown_grid_keeps_its_extra_columns(self):
         formula, results = booktables.parse("|D20|Result|Effect|\n|---|---|---|\n|1-10|Nothing|<br>|\n|11-20|Ambush|A bane on SNEAKING|")
         self.assertEqual(formula, "1d20")
@@ -300,6 +315,25 @@ class Layers(unittest.TestCase):
             write(systems / "dragonbane-rulebook" / "system.toml", 'extends = "bundled:nowhere"\n')
             with self.assertRaisesRegex(SoloError, "no system pack by that name"):
                 packs.load_system(systems / "dragonbane")
+
+    def test_a_pack_can_extend_a_list_of_packs_laid_down_in_order(self):
+        """A supplement over the rulebook doesn't have to become the top pack: the top pack lists
+        the ones it wants, the rulebook they share is laid down once, and a later one wins."""
+        with tempfile.TemporaryDirectory() as folder, unittest.mock.patch.dict(os.environ, {"SOLO_HOME": folder}):
+            systems = Path(folder) / "systems"
+            write(systems / "rules" / "system.toml", 'extends = "bundled:dragonbane"\n[time]\nround = 10\n')
+            write(systems / "cards" / "system.toml", 'extends = "rules"\n')
+            write(systems / "cards" / "tables" / "loot.toml", 'name = "Loot"\nformula = "1d6"\nresults = [{ range = [1, 6], text = "Coin" }]\n')
+            write(systems / "spells" / "system.toml", 'extends = "rules"\n[time]\nround = 5\n')
+            write(systems / "top" / "system.toml", 'extends = ["cards", "spells"]\n')
+            top = packs.load_system(systems / "top")
+            self.assertEqual([d.name for d in reversed(top["dirs"])], ["dragonbane", "rules", "cards", "spells", "top"])
+            self.assertEqual((top["time"], "loot" in top["tables"]), ({"round": 5}, True))
+            # Each supplement still loads by itself over the rulebook, to be audited against its own book.
+            self.assertEqual([d.name for d in reversed(packs.load_system(systems / "cards")["dirs"])], ["dragonbane", "rules", "cards"])
+            write(systems / "rules" / "system.toml", 'extends = ["bundled:dragonbane", "top"]\n')
+            with self.assertRaisesRegex(SoloError, "extends it back"):
+                packs.load_system(systems / "top")
 
     def test_prices_read_as_the_book_writes_them(self):
         money = {"coins": {"gold": 100, "silver": 10, "copper": 1}, "aliases": {"sc": "silver"}}

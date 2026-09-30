@@ -1,0 +1,21 @@
+# A pre-made hero: a healer who keeps the old stories, and hears more than she is told.
+name = "Eydis Salt"
+conditions = []
+items = ["a satchel of herbs and clean linen", "a walking staff", "a knife for cutting bandages, and little else"]
+abilities = ["Herbalist", "Lorekeeper", "Sighted"]
+
+[info]
+role = "Healer"
+
+[attributes]
+edge = 1
+heart = 3
+iron = 1
+shadow = 2
+wits = 2
+
+[tracks]
+health = 5
+spirit = 5
+supply = 5
+momentum = 2

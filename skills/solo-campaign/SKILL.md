@@ -7,6 +7,8 @@ description: Write a campaign pack for the `solo` engine from a player's premise
 
 The player pitched a campaign (a premise, a tone, a number of missions) and the engine rolled its bones into an adventure pack in `~/Games/solo/adventures/<id>/`. You write the flesh: the prose, the people, the procedures a GM needs. The dice have already had their say, and you keep to what they said.
 
+The generator writes campaigns for games of skills (Dragonbane and its like). A game of moves (Ironsworn, family `action-roll`) is refused with a sentence saying so: its waypoints would have to be written as moves and its oracle's odds, which is on the roadmap (ROADMAP.md, item 6).
+
 Read `docs/PACK_FORMAT.md` in the repository first (every key a pack can hold, and chapters). The `solo-import` skill has the craft of a good pack (scene text, gates, voices, the exact commits a GM needs); this skill is what differs when there is no book.
 
 ## What was rolled

@@ -5,7 +5,9 @@ import QtQuick.Particles
 // The moment a die is cast. Every roll, whoever made it (the player on the table, the GM
 // in a turn), stops the Book for a breath: the skill and its target, the die tumbling,
 // spinning and slowing, then where it lands. It lands with a punch and a ring; a Dragon
-// throws gold sparks and glows, a Demon shakes and spits red embers.
+// throws gold sparks and glows, a Demon shakes and spits red embers. A move (Ironsworn)
+// throws an action die and two challenge dice and reads them as a strong hit, a weak hit
+// or a miss; a progress roll throws only the challenge dice.
 Item {
   id: moment
   property var theme
@@ -24,16 +26,28 @@ Item {
 
   readonly property var outcome: beat ? beat.outcome || {} : {}
   readonly property bool pool: outcome.groups !== undefined
-  readonly property var finals: pool
+  readonly property bool move: outcome.hit !== undefined
+  // A move's action die comes first, when it has one (a progress roll doesn't).
+  readonly property int actionDice: move && outcome.action !== undefined ? 1 : 0
+  readonly property var finals: move
+    ? (actionDice ? [outcome.action] : []).concat(outcome.challenge)
+    : pool
     ? outcome.groups.reduce((all, g) => all.concat(g.rolls), []).slice(0, 12)
     : (outcome.rolls && outcome.rolls.length ? outcome.rolls : [outcome.result])
   // Each die's sides, so a tumbling d10 (a Blade Runner step die) never shows a 17.
-  readonly property var sides: pool
+  readonly property var sides: move
+    ? finals.map((_, i) => i < actionDice ? 6 : 10)
+    : pool
     ? outcome.groups.reduce((all, g) => all.concat(g.rolls.map(() => g.sides || 6)), []).slice(0, 12)
     : finals.map(() => 20)
   readonly property color verdictColor: outcome.dragon ? theme.gold : outcome.demon || !outcome.success ? theme.urgent : theme.accent
-  readonly property string verdict: outcome.dragon ? "DRAGON" : outcome.demon ? "DEMON"
+  readonly property string verdict: move ? outcome.hit.replace("_", " ").toUpperCase() + (outcome.match ? " · MATCH" : "")
+    : outcome.dragon ? "DRAGON" : outcome.demon ? "DEMON"
     : pool ? (outcome.successes + (outcome.successes === 1 ? " SUCCESS" : " SUCCESSES")) + triggered : outcome.success ? "SUCCESS" : "FAILURE"
+  // A move's score in parts: the action die, the stat and the adds, or a track's full boxes.
+  readonly property string score: !move ? "" : actionDice
+    ? (outcome.dulled ? "0 (the " + outcome.action + " is cancelled)" : outcome.action) + " + " + outcome.stat + (outcome.adds ? " + " + outcome.adds : "") + " = " + outcome.score
+    : "progress " + outcome.progress
   // What a pool's dice set off (a 1 on a stress die: panic), said with the result.
   readonly property string triggered: outcome.triggers && outcome.triggers.length ? " · " + outcome.triggers.join(", ").toUpperCase() : ""
 
@@ -54,6 +68,14 @@ Item {
 
   function random(i) {
     return 1 + Math.floor(Math.random() * (sides[i] || 6))
+  }
+
+  // A move's dice once they land: the action die plain, a challenge die green when the score
+  // beats it, red when it doesn't, and gold when momentum was burned to cancel it.
+  function moveTint(index) {
+    if (index < actionDice) return outcome.dulled ? theme.faint : theme.text
+    var die = index - actionDice
+    return outcome.cancelled.indexOf(die) >= 0 ? theme.gold : outcome.score > outcome.challenge[die] ? theme.accent : theme.urgent
   }
 
   Timer {
@@ -167,7 +189,8 @@ Item {
         font.pixelSize: moment.theme.small
         font.letterSpacing: 3
         color: moment.theme.dim
-        text: moment.beat ? ((moment.beat.death ? "DEATH ROLL · " : moment.beat.pushed ? "PUSHED · " : "") + (moment.beat.label || "").toUpperCase()
+        text: moment.beat ? ((moment.beat.death ? "DEATH ROLL · " : moment.beat.pushed ? "PUSHED · " : moment.beat.burned ? "MOMENTUM BURNED · " : "")
+                             + (moment.beat.label || "").toUpperCase() + (moment.move && moment.beat.purpose ? " " + moment.beat.purpose.toUpperCase() : "")
                              + (moment.beat.seed !== undefined ? " · SEEDED " + moment.beat.seed : "")) : ""
       }
 
@@ -179,7 +202,7 @@ Item {
         Grid {
           id: dice
           columns: moment.pool ? Math.min(6, moment.faces.length) : Math.max(1, moment.faces.length)
-          spacing: moment.theme.body * (moment.pool ? 0.8 : 1.4)
+          spacing: moment.theme.body * (moment.pool || moment.move ? 0.8 : 1.4)
           transformOrigin: Item.Center
 
           Repeater {
@@ -194,8 +217,8 @@ Item {
               font.family: moment.theme.mono
               font.pixelSize: moment.theme.body * (moment.pool ? 1.05 : 1.25)
               lineHeight: 0.95
-              color: !moment.landed ? moment.theme.text : counts ? moment.verdictColor : moment.theme.faint
-              text: moment.pool ? moment.d6(face, moment.sides[index]) : moment.d20(face)
+              color: !moment.landed ? moment.theme.text : moment.move ? moment.moveTint(index) : counts ? moment.verdictColor : moment.theme.faint
+              text: moment.pool || moment.move ? moment.d6(face, moment.sides[index]) : moment.d20(face)
             }
           }
         }
@@ -203,7 +226,19 @@ Item {
 
       Text {
         anchors.horizontalCenter: parent.horizontalCenter
-        visible: !moment.pool && moment.outcome.target !== undefined
+        visible: moment.move
+        textFormat: Text.PlainText
+        font.family: moment.theme.mono
+        font.pixelSize: moment.theme.body
+        color: moment.theme.dim
+        text: moment.score + (moment.move ? "  against  " + moment.outcome.challenge.join("  and  ") : "")
+        opacity: moment.landed ? 1 : 0
+        Behavior on opacity { NumberAnimation { duration: 220 } }
+      }
+
+      Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        visible: !moment.pool && !moment.move && moment.outcome.target !== undefined
         textFormat: Text.PlainText
         font.family: moment.theme.mono
         font.pixelSize: moment.theme.body

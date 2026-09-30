@@ -35,7 +35,7 @@ KINDS = ("mechanic", "table", "creature", "npc", "spell", "ability", "gear", "pl
 # purpose (the note says why). todo: not decided yet.
 STATUSES = ("mapped", "house", "engine", "skipped", "todo")
 # system.toml keys that describe the pack or an import, not the game.
-_SYSTEM_META = ("name", "family", "source", "foundry", "extends")
+_SYSTEM_META = ("name", "family", "source", "foundry", "extends", "format")
 _RANGE = re.compile(r"^(\d+)\s*-\s*(\d+)$")
 
 
@@ -256,8 +256,7 @@ def _page_coverage(folder, items):
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     toc_path = folder / "toc.json"
     toc = json.loads(toc_path.read_text(encoding="utf-8")) if toc_path.exists() else []
-    texts = sorted(folder.glob("pages/*.txt"))
-    with_text = {int(p.stem) for p in texts if len(p.read_text(encoding="utf-8").strip()) >= SCANNED_BELOW}
+    with_text = {n for n, text in _page_texts(folder).items() if len(text.strip()) >= SCANNED_BELOW}
     cited = {page for item in items.values() for page in item["pages"]}
     uncited = sorted(with_text - cited)
     top = chapter_level(toc)
@@ -269,7 +268,8 @@ def _page_coverage(folder, items):
             chapters.append({"title": entry["title"], "start": entry["start"], "end": entry["end"], "uncited": missing})
     return {"folder": str(folder), "missing": False, "source": manifest.get("source"), "pages": manifest.get("pages"),
             "with_text": len(with_text), "cited": len(with_text & cited), "uncited": uncited, "chapters": chapters,
-            "beyond": sorted(p for p in cited if p > manifest.get("pages", 0))}
+            "beyond": sorted(p for p in cited if p > manifest.get("pages", 0)),
+            "pictures": sorted(int(p.stem) for p in folder.glob("picture/*.txt") if p.stem.isdigit())}
 
 
 # Checked against the book ----------------------------------------------------------------
@@ -283,14 +283,20 @@ def _page_coverage(folder, items):
 _CHECKS_SHOWN = 5
 
 
+def _page_texts(folder):
+    """{page: text}: what the PDF says on the page, then what an agent read off the page's
+    picture (picture/0020.txt) where the PDF has no text there: a card whose value is art.
+    Kept apart from pages/, which a new extract starts over."""
+    texts = {}
+    for part in ("pages", "picture"):
+        for path in sorted(Path(folder).glob(f"{part}/*.txt")):
+            if path.stem.isdigit():
+                texts[int(path.stem)] = texts.get(int(path.stem), "") + "\n" + path.read_text(encoding="utf-8")
+    return texts
+
+
 def _book_pages(folder):
-    pages = {}
-    for path in sorted(Path(folder).glob("pages/*.txt")):
-        try:
-            pages[int(path.stem)] = _norm(path.read_text(encoding="utf-8"))
-        except ValueError:
-            continue
-    return pages
+    return {number: _norm(text) for number, text in _page_texts(folder).items()}
 
 
 def _norm(text):
@@ -312,21 +318,38 @@ def _checked(item, loaded, book):
         data = _data_for(ref, loaded)
         if data is None:
             continue
-        if ref.startswith("tables/"):
-            for result in data.get("results", []):
-                missing = _missing_words(result.get("text", ""), words)
-                if missing:
-                    low, high = (result.get("range") or ["?", "?"])[:2]
-                    label = f"{low}" if low == high else f"{low}-{high}"
-                    found.append(f"{item['id']}: {ref} result {label} \"{_short(result.get('text', ''))}\" isn't on {where} "
-                                 f"(no {', '.join(missing[:4])})")
         # A table's own dice are often never printed (the book just lists 1-6); its results' dice are.
-        for dice in sorted(set(_dice_in({k: v for k, v in data.items() if k != "formula"} if ref.startswith("tables/") else data))):
-            if not _dice_on(dice, text):
-                found.append(f"{item['id']}: {ref} has {dice}, and {where} never says it")
+        # A result can name the page it is on (`page`, a PDF page): a deck of cards is a page each, and
+        # a value found on another card is no proof of this one, so that result is read against its page alone.
+        parts = [(data, text, where)]
+        if ref.startswith("tables/"):
+            parts = [({k: v for k, v in data.items() if k not in ("formula", "results")}, text, where)]
+            for result in data.get("results", []):
+                page = result.get("page")
+                own = book.get(page, "") if isinstance(page, int) else text
+                own_where = f"p. {page}" if isinstance(page, int) else where
+                own_words = set(re.findall(r"[a-z0-9]+", own))
+                label = "-".join(dict.fromkeys(str(n) for n in (result.get("range") or ["?", "?"])[:2]))
+                roles = [v["text"] for v in result.values() if isinstance(v, dict) and isinstance(v.get("text"), str)]  # an NPC attack table's columns
+                for said in [result.get("text", ""), *result.get("choices", []), *roles]:
+                    missing = _missing_words(said, own_words) or _missing_numbers(said, own_words)
+                    if missing:
+                        found.append(f"{item['id']}: {ref} result {label} \"{_short(said)}\" isn't on {own_where} "
+                                     f"(no {', '.join(missing[:4])})")
+                parts.append(({k: v for k, v in result.items() if k not in ("range", "page")}, own, own_where))
+        for part, part_text, part_where in parts:
+            for dice in sorted(set(_dice_in(part))):
+                if not _dice_on(dice, part_text):
+                    found.append(f"{item['id']}: {ref} has {dice}, and {part_where} never says it")
         for label, number in _numbers_in(ref, data):
             if str(number) not in words:
                 found.append(f"{item['id']}: {ref} gives {label} {number}, and {where} never says it")
+
+    money = loaded.get("money") or {}
+    entries = [(ref, _data_for(ref, loaded)) for ref in item["to"] if ref.startswith("gear.toml:gear.")]
+    for ref in _prices_apart([(r, d) for r, d in entries if isinstance(d, dict)], text, {*money.get("coins", {}), *money.get("aliases", {})}):
+        entry = dict(entries)[ref]
+        found.append(f"{item['id']}: {ref} prices {entry['name']} at {entry['price']}, and {where} never puts that price beside its name")
     return found[:_CHECKS_SHOWN] + ([f"{item['id']}: and {len(found) - _CHECKS_SHOWN} more like these"] if len(found) > _CHECKS_SHOWN else [])
 
 
@@ -350,7 +373,7 @@ def _data_for(ref, loaded):
     return node
 
 
-_DICE = re.compile(r"\b(\d*)d(\d+)\b")
+_DICE = re.compile(r"\b(\d*)d(\d+)(?:\s*x\s*(\d+))?\b")
 
 
 def _dice_in(data):
@@ -361,14 +384,17 @@ def _dice_in(data):
         for value in data:
             yield from _dice_in(value)
     elif isinstance(data, str):
-        for count, sides in _DICE.findall(data.lower()):
-            yield f"{count if count not in ('', '1') else ''}d{sides}"
+        for count, sides, times in _DICE.findall(data.lower()):
+            yield f"{count if count not in ('', '1') else ''}d{sides}" + (f"x{times}" if times else "")
 
 
 def _dice_on(dice, text):
-    count, _, sides = dice.partition("d")
-    pattern = rf"\b{count}d{sides}\b" if count else rf"(?<![0-9])(1)?d{sides}\b"
-    return re.search(pattern, text) is not None
+    """A dice expression on the pages; a multiplier (2d6x10) has to be there too: it is the number
+    a card deck's coins turn on, and the one most easily remembered wrong."""
+    count, _, rest = dice.partition("d")
+    sides, _, times = rest.partition("x")
+    head = rf"\b{count}d{sides}" if count else rf"(?<![0-9])(1)?d{sides}"
+    return re.search(head + (rf"\s*x\s*{times}" if times else "") + r"\b", text) is not None
 
 
 def _numbers_in(ref, data):
@@ -383,6 +409,38 @@ def _numbers_in(ref, data):
     return numbers
 
 
+# A price is read back beside its item's name: the plausible price of the wrong row passes a
+# check that only asks whether the number is somewhere on the page. A table puts the price
+# after the name or before it; whichever way explains most of a table's entries is its way,
+# and every entry is judged by that one. A table neither way explains is scrambled (columns
+# read down, not across): it isn't judged, and its picture is the truth.
+_NEAR = 450
+
+
+def _prices_apart(entries, text, coins):
+    """The refs, of [(ref, gear entry)], whose price isn't the amount of money beside their name
+    on the pages. A name the pages don't hold isn't asked (the pack may word it its own way), nor
+    a price with no number ("varies"), nor a pack that names no coins."""
+    if not coins:
+        return []
+    amount = re.compile(r"\d+\s*(?:" + "|".join(re.escape(c) for c in sorted(coins, key=len, reverse=True)) + r")\b")
+    sides = {}
+    for ref, entry in entries:
+        name, price = _norm(entry.get("name", "")), re.sub(r"\s+", "", _norm(entry.get("price", "")))
+        spots = [m.start() for m in re.finditer(re.escape(name), text)] if name else []
+        if spots and re.search(r"\d", price):
+            def beside(found):
+                return price.startswith(re.sub(r"\s+", "", found.group(0))) if found else False
+            after = any(beside(amount.search(text[at + len(name):at + len(name) + _NEAR])) for at in spots)
+            before = any(beside(next(iter(reversed(list(amount.finditer(text[max(0, at - _NEAR):at])))), None)) for at in spots)
+            sides[ref] = (after, before)
+    after, before = sum(a for a, _ in sides.values()), sum(b for _, b in sides.values())
+    way = 0 if after >= before else 1
+    if max(after, before) * 2 < len(sides):
+        return []
+    return [ref for ref, found in sides.items() if not found[way]]
+
+
 _STOP = {"with", "that", "this", "from", "your", "they", "their", "them", "have", "into", "when", "which", "will", "were", "been"}
 
 
@@ -390,6 +448,12 @@ def _missing_words(text, words):
     tokens = [w for w in re.findall(r"[a-z]+", _norm(re.sub(r"\{[^}]*\}", "", text))) if len(w) >= 4 and w not in _STOP]
     missing = [w for w in tokens if w not in words and w.rstrip("s") not in words and f"{w}s" not in words]
     return missing if tokens and len(missing) * 3 > len(tokens) else []
+
+
+def _missing_numbers(text, words):
+    """The numbers a result names (Potency 12, worth 25 gold) that the page doesn't."""
+    numbers = re.findall(r"\b\d+\b", _norm(re.sub(r"\{[^}]*\}", "", text)))
+    return [n for n in numbers if n not in words]
 
 
 def _short(text, size=60):
@@ -531,6 +595,9 @@ def render(report):
                 lines.append(f"- outside any chapter: {spans(outside)}")
         if pages["beyond"]:
             lines.append(f"Cited, but past the book's last page: {spans(pages['beyond'])}.")
+        if pages["pictures"]:
+            lines.append(f"Read from the pictures, not the PDF's text (picture/): p. {spans(pages['pictures'])}. "
+                         "The audit checks the pack against that reading, so look at those pages yourself.")
         lines.append("")
     if report.get("unverified"):
         lines += [f"## Not on the cited pages ({len(report['unverified'])})",

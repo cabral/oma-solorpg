@@ -1,5 +1,6 @@
 # A small adventure for the engine's gates, travel time and clock stages.
 title = "Gates"
+format = 1
 system = "dragonbane"
 start = "hall"
 chaos = 3

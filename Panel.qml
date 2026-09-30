@@ -88,9 +88,20 @@ Item {
   // The fortune chart's column for the next question (Dragonbane's solo rules).
   property string oracleKind: "yes_no"
   property string target: ""
+  // Moves (Ironsworn): the adds a roll takes, the move waiting for its stat or track, the move
+  // groups that are open, and the track being started.
+  property int adds: 0
+  property string pickedMove: ""
+  property var openGroups: ({ "Adventure Moves": true })
+  property string trackKind: "vow"
+  property string trackRank: "dangerous"
 
   readonly property var pc: game && game.pc ? game.pc : null
   readonly property var labels: game && game.labels ? game.labels : ({ attributes: {}, tracks: {}, conditions: [], push: "condition", rests: {}, likelihood: [] })
+  // What the game rolls with: a game of moves (Ironsworn) has these, a game of skills has none.
+  readonly property var moves: labels.moves || null
+  readonly property var momentum: labels.momentum || null
+  readonly property var progressSpec: labels.progress || null
   readonly property var lastCheck: game && game.last_check ? game.last_check : null
   readonly property bool canPush: !dead && lastCheck !== null && lastCheck.type === "check" && lastCheck.outcome.pushable === true
   // Bindings update in no fixed order when state.json reloads, so pc is checked
@@ -406,6 +417,84 @@ Item {
     })
   }
 
+  // Moves ------------------------------------------------------------------------------
+
+  // The moves that roll dice, by the group the book puts them in.
+  function moveGroups() {
+    var groups = {}
+    Object.keys(root.moves || {}).forEach(id => {
+      var move = root.moves[id]
+      if (move.kind !== "none") {
+        var group = move.category || "Moves"
+        groups[group] = (groups[group] || []).concat([{ id: id, name: move.name }])
+      }
+    })
+    return Object.keys(groups).map(name => ({ name: name, moves: groups[name] }))
+  }
+
+  function toggleGroup(name) {
+    var next = Object.assign({}, root.openGroups)
+    next[name] = !next[name]
+    root.openGroups = next
+  }
+
+  function openTracks() {
+    var all = root.game && root.game.progress ? root.game.progress : ({})
+    return Object.keys(all).filter(id => !all[id].ended).map(id => Object.assign({ id: id }, all[id]))
+  }
+
+  // A move with a choice to make (which stat, which track) waits for it; any other rolls at once.
+  function pickMove(id) {
+    var move = root.moves[id]
+    var tracks = move.kind === "progress" ? root.openTracks().filter(t => t.kind === move.track) : []
+    if ((move.kind === "action" && move.stats.length > 1 && !move.pick) || tracks.length > 1) {
+      root.pickedMove = root.pickedMove === id ? "" : id
+    } else {
+      root.rollMove(id, "", "")
+    }
+  }
+
+  function rollMove(id, stat, track) {
+    var args = ["act", id].concat(stat !== "" ? ["--stat", stat] : []).concat(track !== "" ? ["--track", track] : [])
+    if (root.moves[id].kind === "action" && root.adds !== 0) args = args.concat(["--add", String(root.adds)])
+    root.act(args, "roll", () => {
+      root.adds = 0
+      root.pickedMove = ""
+    })
+  }
+
+  // What a move waiting on a choice offers: the stats it can roll, or the open tracks it could read.
+  function pickOptions() {
+    var move = root.pickedMove !== "" && root.moves ? root.moves[root.pickedMove] : null
+    if (!move || !root.pc) return []
+    if (move.kind === "progress") return root.openTracks().filter(t => t.kind === move.track).map(t => ({ label: t.name, stat: "", track: t.id }))
+    return move.stats.map(s => ({ label: s + " " + (root.pc.attributes[s] !== undefined ? root.pc.attributes[s] : root.pc.tracks[s].value), stat: s, track: "" }))
+  }
+
+  // The progress roll for a track: the move that reads its kind of track.
+  function rollTrack(track) {
+    var ids = Object.keys(root.moves).filter(id => root.moves[id].kind === "progress" && root.moves[id].track === track.kind)
+    if (ids.length > 0) root.rollMove(ids[0], "", track.id)
+  }
+
+  function startTrack() {
+    var name = trackName.text.trim()
+    if (name === "") {
+      root.error = "Name it first: a vow, a road or a foe."
+      root.errorAt = "track"
+    } else {
+      root.act(["track", "add", "--kind", root.trackKind, "--rank", root.trackRank, "--", name], "track", () => trackName.text = "")
+    }
+  }
+
+  function boxTicks(track, box) {
+    return Math.max(0, Math.min(root.progressSpec.ticks, track.ticks - box * root.progressSpec.ticks))
+  }
+
+  function signed(value) {
+    return (value > 0 ? "+" : "") + value
+  }
+
   function skillList() {
     var skills = root.pc ? root.pc.skills : {}
     return Object.keys(skills)
@@ -498,18 +587,22 @@ Item {
   // The last roll in parts: its number, what was rolled, and what came of it.
   function rollFace() {
     var outcome = root.lastCheck ? root.lastCheck.outcome : null
-    return !outcome ? "" : outcome.result !== undefined ? String(outcome.result) : String(outcome.successes)
+    return !outcome ? "" : outcome.score !== undefined ? String(outcome.score) : outcome.result !== undefined ? String(outcome.result) : String(outcome.successes)
   }
 
   function rollHead() {
     var check = root.lastCheck
-    return check ? (check.type === "push" ? "Pushed " : "") + check.label : ""
+    if (!check) return ""
+    var what = check.stat ? " +" + check.stat : check.track_name ? " (" + check.track_name + ")" : ""
+    return (check.type === "push" ? "Pushed " : check.type === "burn" ? "Burned: " : "") + check.label + what
   }
 
   function rollVerdict() {
     var outcome = root.lastCheck ? root.lastCheck.outcome : null
     if (!outcome) {
       return ""
+    } else if (outcome.hit !== undefined) {
+      return "vs " + outcome.challenge.join(" · ") + " · " + outcome.hit.replace("_", " ") + (outcome.match ? " · a match" : "")
     } else if (outcome.result !== undefined) {
       var verdict = outcome.dragon ? "Dragon!" : outcome.demon ? "Demon!" : outcome.success ? "success" : "failure"
       return "vs " + outcome.target + " · " + verdict
@@ -527,6 +620,11 @@ Item {
     var seeded = check && check.seed !== undefined ? " · seeded " + check.seed : ""
     if (!check) {
       return ""
+    } else if (check.outcome.hit !== undefined) {
+      var move = check.outcome
+      var sum = move.progress !== undefined ? "progress " + move.progress
+        : (move.dulled ? "0 (the " + move.action + " is cancelled)" : move.action) + " + " + move.stat + (move.adds ? " + " + move.adds : "") + " = " + move.score
+      return sum + (move.burned !== undefined ? " · momentum " + move.burned + " burned" : "") + seeded
     } else if (check.outcome.rolls) {
       return "dice " + check.outcome.rolls.join(", ") + (mods.length ? " (" + mods.join(", ") + ")" : "") + seeded
     } else {
@@ -537,7 +635,7 @@ Item {
   function rollColor() {
     var outcome = root.lastCheck ? root.lastCheck.outcome : null
     return outcome && outcome.dragon ? theme.gold : outcome && !outcome.success ? Color.urgent
-      : outcome && outcome.successes > 1 ? Color.accent : root.textColor
+      : outcome && (outcome.successes > 1 || outcome.hit === "strong_hit") ? Color.accent : root.textColor
   }
 
   function visibleClocks() {
@@ -640,6 +738,7 @@ Item {
     onVisibleChanged: if (!visible) root.bookOpen = false
 
     BookView {
+      objectName: "book"
       anchors.fill: parent
       theme: theme
       game: root.game
@@ -651,6 +750,9 @@ Item {
       onSend: text => root.speak(text)
       onStop: Quickshell.execDetached([root.solo, "-C", root.campaign, "gm", "stop"])
       onRetry: root.speak("")
+      // The X-card: cut the GM's last message (a line or a veil too, if the player made it one), then the GM carries on without it.
+      onCut: (note, line, veil) => root.act(["strike"].concat(note !== "" ? ["--note", note] : []).concat(line !== "" ? ["--line", line] : [])
+                                              .concat(veil !== "" ? ["--veil", veil] : []), "book", () => root.speak(""))
       onAct: args => root.act(args, "book")
       onOpenTable: {
         root.opened = true
@@ -834,6 +936,91 @@ Item {
     Choice { text: "−"; onClicked: stepper.stepped(Math.max(0, stepper.value - 1)) }
     Line { Layout.fillWidth: false; text: String(stepper.value); font.bold: stepper.value > 0 }
     Choice { text: "+"; onClicked: stepper.stepped(Math.min(5, stepper.value + 1)) }
+  }
+
+  // Momentum runs below zero and has a ceiling and a reset the hero's impacts move, so its
+  // bar has a zero in it: the fill runs from there, the gold tick is the reset.
+  component MomentumBar: ColumnLayout {
+    id: bar
+    property var track: ({ value: 0, max: 10, reset: 2 })
+    property var range: ({ min: -6, max: 10 })
+    readonly property real unit: rail.width / (range.max - range.min)
+    Layout.fillWidth: true
+    spacing: Style.space(2)
+
+    RowLayout {
+      Layout.fillWidth: true
+      Line { text: "Momentum" }
+      Line {
+        Layout.fillWidth: false
+        text: root.signed(bar.track.value) + "  (resets to " + root.signed(bar.track.reset) + ")"
+      }
+    }
+
+    Rectangle {
+      id: rail
+      Layout.fillWidth: true
+      implicitHeight: Style.space(8)
+      radius: height / 2
+      color: root.faint
+
+      // Above the ceiling the hero's impacts leave: out of reach.
+      Rectangle {
+        x: (bar.track.max - bar.range.min) * bar.unit
+        width: parent.width - x
+        height: parent.height
+        radius: parent.radius
+        color: root.faint
+      }
+      Rectangle {
+        x: (Math.min(0, bar.track.value) - bar.range.min) * bar.unit
+        width: Math.abs(bar.track.value) * bar.unit
+        height: parent.height
+        color: bar.track.value < 0 ? Color.urgent : Color.accent
+        Behavior on x { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        Behavior on width { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+      }
+      Rectangle {
+        x: -bar.range.min * bar.unit - 1
+        y: -2
+        width: 2
+        height: parent.height + 4
+        color: root.dim
+      }
+      Rectangle {
+        x: (bar.track.reset - bar.range.min) * bar.unit - 1
+        y: -3
+        width: 3
+        height: parent.height + 6
+        radius: 1
+        color: theme.gold
+      }
+    }
+  }
+
+  // A progress track: ten boxes that fill a tick at a time.
+  component Boxes: Row {
+    id: boxes
+    property var track: ({ ticks: 0 })
+    spacing: Style.space(2)
+
+    Repeater {
+      model: root.progressSpec ? root.progressSpec.boxes : 0
+      delegate: Rectangle {
+        required property int index
+        width: Style.space(20)
+        height: Style.space(12)
+        color: "transparent"
+        border.width: 1
+        border.color: root.dim
+
+        Rectangle {
+          anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 1 }
+          height: (parent.height - 2) * root.boxTicks(boxes.track, index) / (root.progressSpec ? root.progressSpec.ticks : 4)
+          color: Color.accent
+        }
+      }
+    }
   }
 
   component Meter: ColumnLayout {
@@ -1234,10 +1421,11 @@ Item {
               }
               Line {
                 size: Style.font.bodySmall
-                text: root.preview ? Object.keys(root.preview.tracks).map(k => k.toUpperCase() + " " + root.preview.tracks[k].max)
+                text: root.preview ? Object.keys(root.preview.tracks).map(k => k.toUpperCase() + " " + (root.preview.tracks[k].min !== undefined ? root.signed(root.preview.tracks[k].value) : root.preview.tracks[k].max))
                   .concat(Object.keys(root.preview.ratings).map(k => k + " " + root.preview.ratings[k])).join(" · ") : ""
               }
               Line {
+                visible: root.preview !== null && Object.keys(root.preview.skills).length > 0
                 size: Style.font.bodySmall
                 text: root.preview ? "Trained: " + Object.keys(root.preview.skills).filter(k => root.preview.skills[k].trained)
                   .map(k => root.preview.skills[k].name + " " + root.preview.skills[k].value).join(", ") : ""
@@ -1397,10 +1585,18 @@ Item {
               delegate: Meter {
                 required property int index
                 readonly property string track: root.trackIds[index] || ""
+                // Momentum, which runs below zero, has its own bar (below).
+                visible: !(root.pc && root.pc.tracks[track] && root.pc.tracks[track].min !== undefined)
                 label: root.labels.tracks[track] || track
                 value: root.pc && root.pc.tracks[track] ? root.pc.tracks[track].value : 0
                 maximum: root.pc && root.pc.tracks[track] ? root.pc.tracks[track].max : 1
               }
+            }
+
+            MomentumBar {
+              visible: root.momentum !== null && !!root.pc && !!root.pc.tracks.momentum
+              track: root.pc && root.pc.tracks.momentum ? root.pc.tracks.momentum : ({ value: 0, max: 10, reset: 2 })
+              range: root.momentum || ({ min: -6, max: 10 })
             }
 
             Flow {
@@ -1468,7 +1664,7 @@ Item {
             Heading { text: "Roll"; visible: root.pc !== null && !root.dying && !root.dead }
 
             RowLayout {
-              visible: root.pc !== null && !root.dying && !root.dead
+              visible: root.pc !== null && !root.dying && !root.dead && root.moves === null
               Layout.fillWidth: true
               spacing: Style.space(12)
 
@@ -1484,7 +1680,7 @@ Item {
               columns: names.length > 4 ? Math.ceil(names.length / 2) : Math.max(1, names.length)
               columnSpacing: Style.space(4)
               rowSpacing: Style.space(4)
-              visible: root.pc !== null && !root.dying && !root.dead
+              visible: root.pc !== null && !root.dying && !root.dead && root.moves === null
 
               Repeater {
                 model: attributes.names
@@ -1501,7 +1697,7 @@ Item {
             Flow {
               Layout.fillWidth: true
               spacing: Style.space(4)
-              visible: root.pc !== null && !root.dying && !root.dead
+              visible: root.pc !== null && !root.dying && !root.dead && root.moves === null
 
               Repeater {
                 model: root.skillList()
@@ -1518,6 +1714,90 @@ Item {
                 text: root.allSkills ? "Fewer skills" : "Other skills…"
                 bordered: false
                 onClicked: root.allSkills = !root.allSkills
+              }
+            }
+
+            // A game of moves (Ironsworn): the stats are what a move adds, and the hero makes moves.
+            Flow {
+              Layout.fillWidth: true
+              spacing: Style.space(4)
+              visible: root.moves !== null && root.pc !== null && !root.dead
+
+              Repeater {
+                model: root.pc && root.moves ? Object.keys(root.pc.attributes) : []
+                delegate: Tag {
+                  required property string modelData
+                  label: modelData + " " + (root.pc ? root.pc.attributes[modelData] : "")
+                }
+              }
+            }
+
+            Stepper {
+              visible: root.moves !== null && root.pc !== null && !root.dead
+              label: "Adds"
+              value: root.adds
+              onStepped: function(value) { root.adds = value }
+            }
+
+            Repeater {
+              model: root.moves !== null && root.pc !== null && !root.dead ? root.moveGroups() : []
+              delegate: ColumnLayout {
+                id: group
+                required property var modelData
+                Layout.fillWidth: true
+                spacing: Style.space(2)
+
+                Heading {
+                  text: (root.openGroups[group.modelData.name] ? "▾ " : "▸ ") + group.modelData.name
+                  color: groupMouse.containsMouse ? root.textColor : root.dim
+
+                  MouseArea {
+                    id: groupMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.toggleGroup(group.modelData.name)
+                  }
+                }
+
+                Flow {
+                  Layout.fillWidth: true
+                  spacing: Style.space(4)
+                  visible: !!root.openGroups[group.modelData.name]
+
+                  Repeater {
+                    model: group.modelData.moves
+                    delegate: Choice {
+                      required property var modelData
+                      text: modelData.name
+                      selected: root.pickedMove === modelData.id
+                      onClicked: root.pickMove(modelData.id)
+                    }
+                  }
+                }
+              }
+            }
+
+            Line {
+              visible: root.pickedMove !== ""
+              size: Style.font.caption
+              color: root.dim
+              text: root.pickedMove !== "" && root.moves && root.moves[root.pickedMove]
+                ? root.moves[root.pickedMove].name + ": " + (root.moves[root.pickedMove].kind === "progress" ? "which one?" : "roll with which stat?") : ""
+            }
+
+            Flow {
+              Layout.fillWidth: true
+              spacing: Style.space(4)
+              visible: root.pickedMove !== ""
+
+              Repeater {
+                model: root.pickOptions()
+                delegate: Choice {
+                  required property var modelData
+                  text: modelData.label
+                  onClicked: root.rollMove(root.pickedMove, modelData.stat, modelData.track)
+                }
               }
             }
 
@@ -1552,7 +1832,7 @@ Item {
                     land.restart()
                   } else {
                     var outcome = root.lastCheck ? root.lastCheck.outcome : {}
-                    var most = outcome.result !== undefined ? 20 : Math.max(3, (outcome.successes || 0) + 2)
+                    var most = outcome.score !== undefined ? 11 : outcome.result !== undefined ? 20 : Math.max(3, (outcome.successes || 0) + 2)
                     rollCard.face = String(Math.floor(Math.random() * most) + (outcome.result !== undefined ? 1 : 0))
                     interval = 40 + rollCard.ticks * rollCard.ticks * 3
                   }
@@ -1605,6 +1885,17 @@ Item {
               }
             }
 
+            // Momentum can be burned on the roll just made, when that would change it.
+            Choice {
+              visible: !!(root.game && root.game.burn) && !root.dead
+              Layout.fillWidth: true
+              selected: true
+              text: root.game && root.game.burn ? "Burn momentum " + root.signed(root.game.burn.momentum) : ""
+              tooltipText: root.game && root.game.burn ? "Cancels the challenge dice under it: a " + root.game.burn.hit.replace("_", " ")
+                + ". Momentum goes back to " + root.signed(root.game.burn.reset) : ""
+              onClicked: root.act(["burn"], "roll")
+            }
+
             Line {
               visible: root.canPush
               color: root.dim
@@ -1641,6 +1932,110 @@ Item {
             }
 
             ErrorLine { place: "roll" }
+
+            // Vows, journeys and fights (Ironsworn): ten boxes each, marked as the story earns it.
+
+            Heading { text: "Vows and roads"; visible: root.moves !== null && root.openTracks().length > 0 && !root.dead }
+
+            Repeater {
+              model: root.moves !== null && !root.dead ? root.openTracks() : []
+              delegate: Card {
+                id: trackCard
+                required property var modelData
+                readonly property bool ranked: !!root.progressSpec && !!root.progressSpec.kinds[modelData.kind]
+                clickable: false
+
+                Line {
+                  font.bold: true
+                  text: trackCard.modelData.name
+                }
+
+                Line {
+                  size: Style.font.caption
+                  color: root.dim
+                  text: (trackCard.modelData.rank ? trackCard.modelData.rank + " " : "")
+                    + (root.progressSpec ? (root.progressSpec.kinds[trackCard.modelData.kind] || root.progressSpec.unranked[trackCard.modelData.kind] || "").toLowerCase() : "")
+                    + " · " + Math.floor(trackCard.modelData.ticks / (root.progressSpec ? root.progressSpec.ticks : 4)) + " of " + (root.progressSpec ? root.progressSpec.boxes : 10)
+                }
+
+                Boxes { track: trackCard.modelData }
+
+                RowLayout {
+                  spacing: Style.space(4)
+
+                  Choice {
+                    text: "Mark progress"
+                    tooltipText: trackCard.ranked ? "What a step of this rank is worth" : "One tick"
+                    onClicked: root.act(["track", "mark", trackCard.modelData.id], "track")
+                  }
+
+                  Choice {
+                    visible: trackCard.ranked
+                    text: "Progress roll"
+                    tooltipText: "Compare the filled boxes to the challenge dice"
+                    onClicked: root.rollTrack(trackCard.modelData)
+                  }
+                }
+              }
+            }
+
+            Fold {
+              id: trackFold
+              label: "Start a track"
+              visible: root.moves !== null && root.pc !== null && !root.dead
+            }
+
+            ColumnLayout {
+              visible: trackFold.open && root.moves !== null && root.pc !== null && !root.dead
+              Layout.fillWidth: true
+              spacing: Style.space(4)
+
+              TextField {
+                id: trackName
+                objectName: "trackName"
+                Layout.fillWidth: true
+                placeholderText: "A vow, a road or a foe"
+                onAccepted: root.startTrack()
+              }
+
+              Flow {
+                Layout.fillWidth: true
+                spacing: Style.space(4)
+
+                Repeater {
+                  model: root.progressSpec ? Object.keys(root.progressSpec.kinds) : []
+                  delegate: Choice {
+                    required property string modelData
+                    text: root.progressSpec.kinds[modelData]
+                    selected: root.trackKind === modelData
+                    onClicked: root.trackKind = modelData
+                  }
+                }
+              }
+
+              Flow {
+                Layout.fillWidth: true
+                spacing: Style.space(4)
+
+                Repeater {
+                  model: root.progressSpec ? Object.keys(root.progressSpec.ranks) : []
+                  delegate: Choice {
+                    required property string modelData
+                    text: modelData
+                    selected: root.trackRank === modelData
+                    onClicked: root.trackRank = modelData
+                  }
+                }
+              }
+
+              Choice {
+                text: "Start"
+                selected: true
+                onClicked: root.startTrack()
+              }
+            }
+
+            ErrorLine { place: "track" }
 
             // Advancement: marks come from Dragons and Demons and the GM's end-of-session
             // questions; rolling them is the last thing in a session.
@@ -1863,7 +2258,7 @@ Item {
                 delegate: Choice {
                   required property string modelData
                   text: modelData
-                  selected: root.odds === modelData
+                  selected: root.odds === modelData || (root.odds === "even" && modelData === "50/50")
                   onClicked: root.odds = modelData
                 }
               }

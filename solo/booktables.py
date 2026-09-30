@@ -55,16 +55,41 @@ def _grid(lines):
 
 
 def _roll_lines(lines):
-    formula, results = None, []
+    """Rows start at a number, with its text on the same line ("1-2 Frozen in place") or on
+    the lines after it (the number alone on its line, as most books' text comes out). What
+    is not a row stays in the result before it: a number that doesn't go up ("2 meters" after
+    row 5), a number alone on its line that isn't the next row ("10" in "within\n10\nmeters"),
+    and, once a header has named the die, a number above its faces ("20 meters suffer a fear
+    attack" under D6)."""
+    formula, results, faces = None, [], None
     for line in lines:
         found = _ROLL.match(line)
-        if found:
-            results.append({"range": _span(found), "text": " ".join(found.group(3).split())})
+        row = found or _RANGE.match(line)
+        if row and _starts_row(_span(row), results, faces, bare=not found):
+            results.append({"range": _span(row), "text": " ".join(found.group(3).split()) if found else ""})
         elif results and line.strip():
-            results[-1]["text"] += " " + " ".join(line.split())  # a result that runs onto the next line
+            results[-1]["text"] = (results[-1]["text"] + " " + " ".join(line.split())).strip()  # a result that runs onto the next line
         elif not results and line.strip():
             formula = formula or next((_formula_word(word) for word in re.split(r"[\s(),]+", line) if _formula_word(word)), None)
+            faces = _faces(formula)
     return formula, results
+
+
+def _starts_row(span, results, faces, bare):
+    low = span[0]
+    top = results[-1]["range"][1] if results else 0
+    if (faces and low > faces) or (results and low <= top):
+        return False
+    elif not results or not bare:
+        return True
+    else:
+        return low == top + 1 or (top % 10 == 6 and low == top + 5)  # on a d66, 16 is followed by 21
+
+
+def _faces(formula):
+    """The highest total the dice in a header can make: 1d6 is 6, d66 is 66, 2d6 is 12."""
+    found = re.fullmatch(r"(\d*)d(\d+)", formula or "")
+    return int(found.group(1) or 1) * int(found.group(2)) if found else None
 
 
 def _span(match):

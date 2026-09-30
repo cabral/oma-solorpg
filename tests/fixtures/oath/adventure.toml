@@ -1,0 +1,26 @@
+# A small adventure for the action-roll engine (moves, momentum, progress tracks): made-up
+# text, two scenes and a clock that a missed roll advances.
+title = "The Oath Test"
+format = 1
+system = "ironsworn"
+start = "camp"
+
+[clocks.doom]
+label = "Doom"
+segments = 2
+advance = ["check:miss"]
+
+[[clocks.doom.stages]]
+at = 2
+text = "The doom arrives."
+facts = { doom.here = true }
+
+[scenes.camp]
+title = "Camp"
+text = "A fire, a road, and a man who wants something done."
+exits = { road = "The road" }
+
+[scenes.road]
+title = "The road"
+text = "A road, going somewhere."
+exits = { camp = "Back to camp" }

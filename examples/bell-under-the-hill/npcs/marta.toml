@@ -1,0 +1,14 @@
+name = "Marta"
+role = "The midwife of Marrow Ford, one of the sleepers, and Brenna's aunt"
+description = "A tiny old woman in her nightgown, her hands worn as walnut wood, ringing a bell she cannot see."
+faction = "marrow_ford"
+attitude = "neutral"
+location = "hall"
+wants = "The oath kept. She is the last who knew the whole of it."
+fears = "That the words die with her."
+voice = "Asleep, she murmurs the rhyme. Awake, she is brisk, kind, and unafraid of anything but a dropped lamp."
+
+[[secrets]]
+id = "the_rest_of_the_rite"
+text = "She knows what the rite needs beyond the rhyme: the lamps are lit from the door outward, the names are said once for each flame, and the bread is laid down last, broken, never cut. If she is awake, she will say so."
+reveal = "not npc.marta.location == 'hall'"

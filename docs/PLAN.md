@@ -53,6 +53,8 @@ Also now (the Book, phase 7f): a story window the plugin owns, with the default 
 
 Next: choosing trained skills by hand in the builder, a character roster, the rest of Dragonbane combat (ranged ranges, weapon durability on parry, monster traits, a Dragon's other choices), spells and WP spending, a settings entry for SOLO_HOME.
 
+Also now (a game with no book, phase 8): the `action-roll` family and Ironsworn with its starter adventure, The Bell Under the Hill (above), so first launch plays with clicks only.
+
 Later: adapters for more agents in the Book (only Claude Code and Codex stream and resume today), the importer from the panel, other families' builders, publishing.
 
 ### UX rules
@@ -114,7 +116,7 @@ The manifest sets `keepLoaded`, so the panel entry (the Table, the Book and the 
                v                              |               v
 +----------------------------------------------------------------------+
 | solo (stdlib Python, no LLM, no network)                             |
-|   dice + resolvers    d20-under, d6-pool                             |
+|   dice + resolvers    d20-under, d6-pool, action-roll                |
 |   packs               system pack (+ creation.toml), adventure pack  |
 |   library             bundled packs + ~/Games/solo (yours)           |
 |   creation            pre-made, random or guided characters          |
@@ -303,7 +305,8 @@ BarWidget.qml               the d20 bar button
 bin/solo                    CLI entry point
 solo/                       engine package, standard library only
   dice.py                   dice expressions
-  mechanics.py              resolvers per mechanics family
+  mechanics.py              resolvers per mechanics family (d20-under, d6-pool, action-roll)
+  datasworn.py              Ironsworn's moves, oracles and assets from Datasworn, as pack files
   packs.py                  system/adventure packs, validation, branch conditions
   library.py                where packs and campaigns live, and the listing for the panel
   creation.py               character building from creation.toml, pre-mades, files
@@ -311,7 +314,9 @@ solo/                       engine package, standard library only
   foundry.py                Foundry export importer
   cli.py                    commands and output
 packs/dragonbane/           hand-written system pack, creation tables, pre-made heroes
-examples/red-tusk/          a small original adventure, bundled and playable
+packs/ironsworn/            a whole game: hand-written system.toml, creation and heroes; generated moves, tables, assets (CC BY, credited)
+examples/red-tusk/          a small original adventure, bundled and playable (Dragonbane)
+examples/bell-under-the-hill/  the starter adventure for Ironsworn: needs no book
 skills/solo-gm/SKILL.md     GM protocol for the agent
 skills/solo-import/SKILL.md building or enriching an adventure pack (PDF or Foundry)
 templates/AGENTS.md         copied into each new campaign
@@ -366,7 +371,7 @@ time = { shift = 1 }
 
 [skills]      # skill = attribute; skills.json from the importer adds to this
 sneaking = "agl"
-animism = { attribute = "wil", untrained = false }
+animism = { attribute = "int", untrained = false }
 
 [foundry]     # where the Foundry system keeps a character's values, for the importer
 tracks = { hp = "hitPoints", wp = "willPoints" }
@@ -407,7 +412,19 @@ leather_armor = 1
 
 Beside it: `creation.toml` (see Character creation), `characters/*.toml` (pre-made heroes), and generated `skills.json`, `rules/*.md`, `tables/*.json`. A pack built from a book lives in `~/Games/solo/systems`, never in this repository.
 
-`untrained` (base chance by attribute) is a d20-under setting. d6-pool packs add `success`, `[pool]`, `[extra_dice.<name>]` (with `on_one` triggers) and `[triggers.<name>]` tables; see `tests/fixtures/yze/system/system.toml`.
+`untrained` (base chance by attribute) is a d20-under setting. d6-pool packs add `success`, `[pool]`, `[extra_dice.<name>]` (with `on_one` triggers) and `[triggers.<name>]` tables; see `tests/fixtures/yze/system/system.toml`. action-roll packs (Ironsworn) add `[momentum]`, `[progress]`, an `odds` oracle and the `moves/` and `assets/` folders; see `packs/ironsworn/system.toml` and docs/PACK_FORMAT.md.
+
+#### The action-roll family
+
+Ironsworn is the family's first game and the project's one whole game in the repository: its moves, oracles and assets are published under the Creative Commons Attribution 4.0 license (the rest of the book's text is CC BY-NC-SA, non-commercial only, and is left out), so they ship in `packs/ironsworn` with their credit, and a fresh install plays with no book. What the engine adds for it:
+
+- `mechanics.action_roll`, `progress_roll` and `burn`: an action die (d6) and a stat plus adds (at most 10) against two challenge dice (d10), read as a strong hit, a weak hit or a miss, a tie going to the dice, matched dice a twist; negative momentum equal to the action die cancels it; burning cancels every challenge die under momentum; a progress roll counts a track's full boxes and ignores momentum.
+- `solo act <move>`: the move's roll as an `act` event, and the move's own words for the result (`says`) for the GM, who chooses within them and commits the cost. `solo burn` is a `burn` event that replaces the last result and resets momentum. What a result sets off for the clocks (`check:miss`, `check:weak_hit`, `check:strong_hit`, `check:match`) waits while a burn could still change it, and happens when the story goes on (a `settled` event) or the burn is made, so a burn spares the clock a miss that never was.
+- Momentum is a track with a `min` and a `reset`; each impact (a condition) lowers its `max` and `reset` by one, and an impact keeps the track it names (wounded: health) from rising. Health, spirit, supply and momentum change by commit, as every track does.
+- Progress tracks (`progress` in state, `progress` events, `solo track`): vows, journeys and fights at a rank, and bonds, which every hero has. A mark fills ticks by rank; only full boxes count on a progress roll.
+- The yes/no oracle is `oracle.chart = "odds"`: a d100 against the chance of a yes at each of five odds, a double a twist. Characters come from a stat array dealt at random, three assets, and constant tracks.
+- The Table shows moves in place of skills (by group, with a stat to choose and `Adds`), momentum as a bar with a zero and a reset mark, the vows and roads as boxes with Mark progress and Progress roll, and Burn momentum when `state.json`'s `burn` says it would change the roll. The Book's dice moment throws an action die and two challenge dice and lights each as the score beats it, and its side column keeps the momentum bar and the tracks.
+- `solo import datasworn <classic.json> --out packs/ironsworn` writes `moves/`, `tables/` and `assets/`, and takes only objects whose own license (else their collection's, else the package's) is CC BY 4.0; it says what it left out and the odds the ask-the-oracle tables give.
 
 Adventure pack, `adventures/<adventure>/`:
 

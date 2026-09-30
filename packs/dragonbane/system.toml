@@ -11,6 +11,7 @@
 # ~/Games/solo/systems/dragonbane over that (the solo rules, if you have that book). Until
 # they hold everything under `needs`, the engine won't start a campaign on this system.
 name = "Dragonbane"
+format = 1
 family = "d20-under"
 
 # What a campaign can't start without. Each is a key the pack built from your book must
@@ -80,6 +81,6 @@ spears = "str"
 staves = "agl"
 swords = "str"
 # Magic can't be tried untrained: only mages have their school's skill.
-animism = { attribute = "wil", untrained = false }
-elementalism = { attribute = "wil", untrained = false }
-mentalism = { attribute = "wil", untrained = false }
+animism = { attribute = "int", untrained = false }
+elementalism = { attribute = "int", untrained = false }
+mentalism = { attribute = "int", untrained = false }

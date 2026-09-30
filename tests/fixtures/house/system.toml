@@ -2,6 +2,7 @@
 # the bundled names (packs/dragonbane), so the tests run through the same layering play
 # does. Every text here is made up for the tests, the numbers are test values and the
 # lists are short: it is not the book, and it isn't meant to be played.
+format = 1
 extends = "../../../packs/dragonbane"
 
 untrained = [[6, 3], [10, 4], [14, 5], [18, 6]]

@@ -13,7 +13,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from . import SoloError, audit, booktables, campaign, creation, desk, dice, extract, foundry, generate, gm, library, oracle, packs
+from . import SoloError, audit, booktables, campaign, creation, datasworn, desk, dice, extract, foundry, generate, gm, library, mechanics, oracle, packs, report, review
 from .library import REPO
 from .packs import ATTITUDES
 
@@ -25,7 +25,7 @@ AGENT_SKILL_DIRS = (".claude/skills", ".agents/skills", ".codex/skills", ".pi/ag
 # adventure's text could talk the GM into running them.
 GM_COMMANDS = (
     "scene", "npc", "rule", "state", "log", "rebuild", "validate", "resume", "recall", "history",
-    "check", "push", "rest", "roll", "table", "ask", "move", "commit", "say",
+    "check", "push", "act", "burn", "track", "rest", "roll", "table", "ask", "move", "commit", "say",
     "fight", "attack", "enemy", "ally", "wound", "defend", "death-roll", "rally", "hero", "threat", "search", "scavenge", "mark", "advance", "voice", "light",
 )
 # `solo prefs` is left out on purpose: the player's lines and veils are theirs to change.
@@ -120,8 +120,9 @@ def cmd_library(args):
 
 
 def cmd_character(args):
-    system = packs.load_system(library.find_system(args.system) if args.system else library.only("system"))
     adventure = packs.load_adventure(library.find_adventure(args.adventure)) if args.adventure else None
+    system_name = args.system or (adventure or {}).get("system")
+    system = packs.load_system(library.find_system(system_name) if system_name else library.only("system"))
     sheet = campaign.character_sheet(creation.character(system, " ".join(args.words), name=args.name, seed=args.seed, adventure=adventure), system)
     if args.out:
         Path(args.out).expanduser().write_text(json.dumps(sheet, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -332,7 +333,7 @@ def rule_text(topic, matches, pages, tables):
     table_line = [f"Tables: {', '.join(f'{name} (solo table {tid})' for tid, name in tables)}"] if tables else []
     if not topic.strip():
         return "\n".join(["The rules here, by title (with the words they're found by):",
-                          *[f"- {p['title']}" + (f" ({', '.join(p['search'])})" if p.get("search") else "") for p in pages]])
+                          *[f"- {p['title']}" + (f" ({', '.join(p['search'])})" if p.get("search") else "") for p in pages if not p.get("quiet")]])
     if not matches:
         if table_line:
             return "\n".join(table_line)
@@ -375,6 +376,7 @@ def cmd_state(args):
         state = c.state
         view = {k: state[k] for k in ("title", "scene", "scene_title", "pc", "factions", "promises", "clocks", "clues", "chaos", "combat", "prefs", "ended")}
         view["consequences"] = {cid: k for cid, k in state["consequences"].items() if k["status"] == "open"}
+        view["progress"] = {tid: t for tid, t in state["progress"].items() if not t["ended"]}
         view["kit"] = campaign.snapshot(c.system, state)["kit"]
         view["time"] = _elapsed(state["time"])
         view["npcs_met"] = {nid: n for nid, n in state["npcs"].items() if n["met"]}
@@ -385,6 +387,32 @@ def cmd_log(args):
     with _open(args) as c:
         for event in c.events[-args.n:]:
             print(f"#{event['seq']} {campaign.gm_line(event)}")
+
+
+def cmd_strike(args):
+    """The player's X-card: cut the GM's last message, and add a line or a veil from the same place."""
+    with _open(args) as c:
+        event = c.strike(args.note)
+        if args.line or args.veil:
+            c.set_prefs(lines=args.line, veils=args.veil)
+        _json({"struck": event["target"], "prefs": c.state["prefs"]})
+
+
+def cmd_review(args):
+    """A campaign played for real, checked the way a play test is: what to write the next scenario about."""
+    with _open(args) as c:
+        print(review.render(review.review(c, args.trace), c.state["title"]))
+
+
+def cmd_report(args):
+    """A report for a bug: what happened by ids, numbers and dice, with the books' words left out."""
+    with _open(args) as c:
+        text = report.report(c, events=args.n, messages=0 if args.no_messages else args.messages)
+    if args.out:
+        Path(args.out).expanduser().write_text(text, encoding="utf-8")
+        print(f"wrote {args.out}: read it before you post it")
+    else:
+        print(text, end="")
 
 
 def cmd_resume(args):
@@ -425,7 +453,7 @@ def cmd_validate(args):
         raise SoloError(f"{len(problems)} problem(s):\n  " + "\n  ".join(problems))
     else:
         print("ok: " + " and ".join(p["dir"].name for p in (system, adventure) if p))
-        for warning in packs.lint(adventure) if adventure else []:
+        for warning in [*packs.format_notes(packs.declared_formats(system, adventure)), *(packs.lint(adventure) if adventure else [])]:
             print(f"worth a look: {warning}")
 
 
@@ -507,6 +535,52 @@ def cmd_check(args):
     with _open(args) as c:
         event = c.check(" ".join(args.stat), args.boons, args.banes, rng=_rng())
         _report(c, event, push=_push_options(c, event), threat=_threat_opening(c, event))
+
+
+def cmd_act(args):
+    with _open(args) as c:
+        event = c.act(" ".join(args.move), stat=args.stat, adds=args.add, track=args.track, rng=_rng())
+        _report(c, event, says=_move_says(c, event), burn=_burn_option(c, event))
+
+
+def cmd_burn(args):
+    with _open(args) as c:
+        event = c.burn(rng=_rng())
+        _report(c, event, says=_move_says(c, event))
+
+
+def cmd_track(args):
+    words = " ".join(args.words)
+    with _open(args) as c:
+        if args.action == "add":
+            _report(c, c.track_add(words, args.kind or "", args.rank))
+        elif args.action == "mark":
+            _report(c, c.track_mark(words, args.times))
+        elif args.action == "set":
+            # A bare number sets the ticks; +4 and -4 (kept as text) move them.
+            _report(c, c.track_set(words, ticks=int(args.ticks) if args.ticks and args.ticks.isdigit() else args.ticks, rank=args.rank))
+        elif args.action == "end":
+            _report(c, c.track_end(words, args.how))
+        else:
+            print("\n".join(_progress_lines(c.state)) or "No progress tracks yet: solo track add \"<name>\" --kind vow --rank dangerous")
+
+
+_TWIST = ("The challenge dice match: a twist. On a hit, an opportunity or a turn in the hero's favour; "
+          "on a miss, things get worse in a way nobody saw coming (ask the oracle if unsure).")
+
+
+def _move_says(c, event):
+    """The move's own words for the result the dice gave, and what a match adds."""
+    words = c.system["moves"][event["move"]]["outcomes"][event["outcome"]["hit"]]
+    return f"{words} {_TWIST}" if event["outcome"]["match"] else words
+
+
+def _burn_option(c, event):
+    """What burning momentum would do to the roll just made, if it would do anything."""
+    burn = campaign.burn_option(c.state)
+    if burn:
+        return (f"solo burn (the player's choice): momentum {burn['momentum']} cancels the challenge dice under it, "
+                f"{burn['hit'].replace('_', ' ')} instead of {event['outcome']['hit'].replace('_', ' ')}, and goes back to {burn['reset']}")
 
 
 def _threat_opening(c, event):
@@ -748,6 +822,8 @@ def cmd_gm(args):
     if args.action == "pace":
         # The player's, for every campaign: it needs none.
         _json({"pace": gm.set_pace(" ".join(args.text)) if args.text else gm.pace()})
+    elif args.action == "budget":
+        _budget(args)
     else:
         root = campaign.find(args.campaign)
         if args.action == "turn":
@@ -765,6 +841,22 @@ def cmd_gm(args):
             _json({"agent": agent, "book": gm.supported(agent)})
         else:
             _json(gm.status(root))
+
+
+def _budget(args):
+    """What a GM session may spend, the player's to see and raise (never the GM's: solo gm isn't a GM command).
+    The limits are for every campaign; the count is the campaign's, and --reset starts it again."""
+    if args.text and not args.text[0].replace(".", "", 1).isdigit():
+        raise SoloError(f"a budget is dollars, a number: solo gm budget 20 (or --turns 400), not {args.text[0]!r}")
+    limit = gm.set_budget(usd=float(args.text[0]) if args.text else None, turns=args.turns) if args.text or args.turns else gm.budget()
+    try:
+        root = campaign.find(args.campaign)
+    except SoloError:
+        root = None
+    if root is not None and args.reset:
+        gm.reset_spend(root)
+    saved = json.loads((root / ".solo" / "agent.json").read_text(encoding="utf-8")).get("session") if root and (root / ".solo" / "agent.json").exists() else None
+    _json({"limit": limit, **({"spent": {k: v for k, v in gm.spent(root, saved).items() if k != "session"}} if root else {})})
 
 
 def cmd_desk(args):
@@ -821,24 +913,32 @@ def cmd_extract(args):
     if manifest["toc_from"] != "outline":
         print("The PDF has no bookmarks: toc.json is a guess from font sizes. Check it against the book's contents page.")
     if manifest["scanned"]:
-        print(f"{len(manifest['scanned'])} pages are pictures with no text (a scan). Run ocrmypdf on the PDF and extract again.")
+        listed = ", ".join(map(str, manifest["scanned"]))
+        print(f"{len(manifest['scanned'])} pages have almost no text and a picture: {listed}. A cover, a chapter opener or full-page art looks like this and needs nothing; "
+              "if a page that should hold text is among them (it is a scan), run ocrmypdf on the PDF and extract again.")
 
 
 def cmd_import(args):
-    if args.source == "table":
+    if args.source == "datasworn":
+        report = datasworn.build(packs.load_data(Path(args.json).expanduser()), Path(args.out).expanduser())
+        print(f"wrote {report['moves']} moves, {report['tables']} tables and {report['assets']} assets into {args.out}")
+        print("left out (not under CC BY, or not read): " + "; ".join(f"{kind} {what}" for kind, what in report["left_out"].items()))
+        print("the yes/no odds its ask-the-oracle tables give (system.toml's [oracle] odds): " + ", ".join(f"{level} {chance}" for level, chance in report["odds"].items()))
+        print("\n".join(f"note: {note}" for note in report["notes"]))
+    elif args.source == "table":
         text = sys.stdin.read() if args.file == "-" else Path(args.file).expanduser().read_text(encoding="utf-8")
         path, problems = booktables.write(text, Path(args.out).expanduser(), name=args.name, formula=args.formula, source=args.pages and f"p. {args.pages}")
         print(f"wrote {path}")
         if problems:
             raise SoloError("check it against the book's page (the picture in tables/ when columns scrambled): " + "; ".join(problems))
-        return
-    if args.kind == "adventure":
-        written = foundry.import_adventure(args.paths, args.out, journal=args.journal)
-    elif args.kind == "rules":
-        written = foundry.import_rules(args.paths, args.out)
     else:
-        written = foundry.import_character(args.paths, args.out, system=packs.load_system(library.find_system(args.system)))
-    print(f"wrote {written}")
+        if args.kind == "adventure":
+            written = foundry.import_adventure(args.paths, args.out, journal=args.journal)
+        elif args.kind == "rules":
+            written = foundry.import_rules(args.paths, args.out)
+        else:
+            written = foundry.import_character(args.paths, args.out, system=packs.load_system(library.find_system(args.system)))
+        print(f"wrote {written}")
 
 
 # Rendering ------------------------------------------------------------------------------
@@ -888,7 +988,8 @@ def scene_digest(c):
     lines += _fact_lines(c)
     if state["combat"]:
         lines += ["## Fight", *[f"- {line}" for line in _now(c) if not line.startswith("ended")], ""]
-    chaos = [] if c.system.get("oracle", {}).get("chart") == "fortune" else [f"Chaos factor: {state['chaos']}"]
+    lines += _progress_lines(state)
+    chaos = [] if c.system.get("oracle", {}).get("chart") in ("fortune", "odds") else [f"Chaos factor: {state['chaos']}"]
     story = _hero_story(state)
     lines += ["## Character", _pc_line(state), _skills_line(state), *(["Their story (hero.* facts): " + "; ".join(story)] if story else []), *chaos, ""]
     nudge = _chronicle_nudge(c)
@@ -1007,10 +1108,11 @@ def resume_digest(c, book=False):
     to repeat as they were, and what happened after them. In the Book the player has
     already read them, so the GM carries on instead of repeating itself."""
     state, events = c.state, c.events
-    speech = [e for e in events if e["type"] == "said"]
+    speech = [e for e in events if e["type"] == "said" and e["seq"] not in state["struck"]]  # what the player cut is gone
     last = next((e for e in reversed(speech) if e["by"] == "gm"), None)
     lines = [f"# {state['title']}: {state['pc']['name']} in {state['scene_title']} ({state['scene']})", ""]
     lines += _prefs_lines(state)
+    lines += _cut_lines(c)
     lines += _problem_lines(c)
     lines += [f"- {line}" for line in _now(c)] + ([""] if _now(c) else [])
     if last is None:
@@ -1043,6 +1145,21 @@ def resume_digest(c, book=False):
         lines += ["## Earlier (for you, don't repeat)", *[f"{'GM' if e['by'] == 'gm' else 'Player'}: {e['text']}\n" for e in earlier]]
     lines += _threads(c)
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _cut_lines(c):
+    """What the player cut with the X-card (the last few), for the GM to stay clear of: what it had said, what the
+    player asked, and what it had committed that turn (a cut doesn't undo it)."""
+    said = {e["seq"]: e["text"] for e in c.events if e["type"] == "said"}
+    cuts = [e for e in c.events if e["type"] == "struck"][-3:]
+    if not cuts:
+        return []
+    lines = ["## Cut by the player (an X-card: never come back to these, and don't repeat them)"]
+    for e in cuts:
+        first = " ".join(said.get(e["target"], "").split())
+        lines.append(f"- You had said (#{e['target']}): \"{first[:240] + '...' if len(first) > 240 else first}\"" + (f". The player said: {e['note']}" if e.get("note") else ""))
+        lines += [f"  - it had committed, and that stands unless you retract it in the story: {kept}" for kept in e.get("committed") or []]
+    return lines + [""]
 
 
 _RECENT_MOMENTS = 25
@@ -1345,9 +1462,20 @@ def _clock_line(c, clock_id):
     return line
 
 
+def _progress_lines(state):
+    """The progress tracks still open, as the rules count them: full boxes, and the ticks toward the next."""
+    spec, lines = state["labels"]["progress"], []
+    for track_id, track in state["progress"].items():
+        if not track["ended"]:
+            boxes, part = divmod(track["ticks"], spec["ticks"])
+            rank = f" ({track['rank']} {track['kind']})" if track["rank"] else ""
+            lines.append(f"- {track_id}: {track['name']}{rank}: {boxes} of {spec['boxes']} boxes" + (f" and {part} tick{'s' * (part != 1)}" if part else ""))
+    return ["## Progress tracks", *lines, ""] if lines else []
+
+
 def _pc_line(state):
     pc = state["pc"]
-    tracks = ", ".join(f"{name} {t['value']}/{t['max']}" for name, t in pc["tracks"].items())
+    tracks = ", ".join(_track_text(name, t) for name, t in pc["tracks"].items())
     line = f"{pc['name']}: {tracks}; conditions: {', '.join(pc['conditions']) or 'none'}"
     if pc["dead"]:
         line += "; DEAD"
@@ -1358,9 +1486,20 @@ def _pc_line(state):
     return line + f"; carrying: {', '.join(pc['items']) or 'nothing'}; time elapsed: {_elapsed(state['time'])}"
 
 
+def _track_text(name, track):
+    """hp 9/14; momentum, which runs below zero, as +2 (up to 10, back to 2 after a burn)."""
+    if "min" in track:
+        return f"{name} {track['value']:+d} (to {track['max']}, resets to {track['reset']})"
+    else:
+        return f"{name} {track['value']}/{track['max']}"
+
+
 def _skills_line(state):
     """The names to roll with: the hero's trained skills with their values, then the rest.
     GMs who know other games reach for "search" or "insight"; these are the ones that exist."""
+    if state["family"] == "action-roll":
+        pc = state["pc"]
+        return "Stats: " + ", ".join(f"{name} {value}" for name, value in pc["attributes"].items()) + (f"; assets: {', '.join(pc['abilities'])}" if pc["abilities"] else "")
     skills = state["pc"]["skills"]
     trained = [f"{key} {s['value']}" for key, s in skills.items() if s["trained"]]
     other = [f"{key} {s['value']}" for key, s in skills.items() if not s["trained"]]
@@ -1432,7 +1571,7 @@ def _foe_text(foe):
 def _hero_line(pc):
     """Ragna, Dwarf, Fighter, Adult: HP 14/14, WP 11/11"""
     who = ", ".join([pc["name"], *map(str, pc.get("info", {}).values())])
-    return who + ": " + ", ".join(f"{t.upper()} {v['value']}/{v['max']}" for t, v in pc["tracks"].items())
+    return who + ": " + ", ".join(f"{t.upper()} {v['value']:+d}" if "min" in v else f"{t.upper()} {v['value']}/{v['max']}" for t, v in pc["tracks"].items())
 
 
 def _attitude_name(value):
@@ -1463,6 +1602,11 @@ def _prefs_arguments(sub):
     sub.add_argument("--tone", help='how the story should feel: "grim and quiet", "pulpy"')
     sub.add_argument("--line", action="append", default=[], help="something that never happens in the story (repeatable)")
     sub.add_argument("--veil", action="append", default=[], help="something that happens only off screen (repeatable)")
+
+
+def command_names():
+    """Every `solo` command, GM or not."""
+    return sorted(_parser()._subparsers._group_actions[0].choices)
 
 
 def _parser():
@@ -1506,6 +1650,17 @@ def _parser():
     command("scene", cmd_scene, "the current scene, for the GM (Markdown)")
     command("npc", cmd_npc, "an NPC's profile and live state (Markdown)").add_argument("id")
     command("rule", cmd_rule, "a rules page by title or topic (none: every page)").add_argument("topic", nargs="*")
+    sub = command("strike", cmd_strike, "the player's X-card: cut the GM's last message (the Book and recall leave it out; the GM is told not to come back to it)")
+    sub.add_argument("--note", help="what to avoid, in the player's words")
+    sub.add_argument("--line", action="append", default=[], help="also make this a line: something that never happens in the story (repeatable)")
+    sub.add_argument("--veil", action="append", default=[], help="also make this a veil: something that happens only off screen (repeatable)")
+    sub = command("review", cmd_review, "check this campaign as a play test would: refused commands, bookkeeping in the story, foes that never struck back, consequences never paid, a person with two names (Markdown)")
+    sub.add_argument("--trace", help="a trace file (SOLO_TRACE); default: the campaign's own .solo/trace.jsonl, which the Book's turns write")
+    sub = command("report", cmd_report, "a bug report for this campaign, safe to post: ids, numbers and dice, with rules pages and pack text left out (Markdown)")
+    sub.add_argument("-n", type=int, default=25, help="how many recent events (default 25)")
+    sub.add_argument("--messages", type=int, default=6, help="how many of the last messages to include (default 6)")
+    sub.add_argument("--no-messages", action="store_true", help="leave the story's own words out too")
+    sub.add_argument("--out", help="write it to a file instead of printing it")
     command("state", cmd_state, "the character and the table at a glance (JSON)")
     command("log", cmd_log, "recent events").add_argument("-n", type=int, default=15)
     sub = command("resume", cmd_resume, "where the table stopped: the GM's last words and what came after (Markdown)")
@@ -1532,6 +1687,20 @@ def _parser():
     sub.add_argument("stat", nargs="+")
     sub.add_argument("--boons", type=int, default=0)
     sub.add_argument("--banes", type=int, default=0)
+    sub = command("act", cmd_act, "make a move (Ironsworn): the roll it asks for, and the move's words for the result")
+    sub.add_argument("move", nargs="+", help="a move by id or name: face_danger, strike, fulfill_your_vow")
+    sub.add_argument("--stat", help="what the roll adds, from the ones the move lists (edge, heart, iron ...), or highest / lowest of them")
+    sub.add_argument("--add", type=int, default=0, help="adds: the +1s a move, an asset or a bond gives")
+    sub.add_argument("--track", help="a progress move: the vow, journey or fight it reads (default: the only one open)")
+    command("burn", cmd_burn, "burn momentum on the last action roll: challenge dice under it are cancelled, momentum resets")
+    sub = command("track", cmd_track, "progress tracks (Ironsworn): add <name> --kind vow --rank dangerous, mark <id> [--times 2], set <id> [--ticks 8] [--rank epic], end <id> --how fulfilled, list")
+    sub.add_argument("action", choices=["add", "mark", "set", "end", "list"])
+    sub.add_argument("words", nargs="*", help="add: the track's name; mark, set, end: its id")
+    sub.add_argument("--kind", help="add: vow, journey or fight")
+    sub.add_argument("--rank", help="add, set: troublesome, dangerous, formidable, extreme or epic")
+    sub.add_argument("--times", type=int, default=1, help="mark: how many marks (a foe's harm: one each)")
+    sub.add_argument("--ticks", help="set: the ticks (a number sets them; +4 or -4 moves them)")
+    sub.add_argument("--how", default="done", help="end: how it ended (fulfilled, forsaken, won, lost)")
     sub = command("push", cmd_push, "push the last check")
     sub.add_argument("--condition", help="condition to take (Dragonbane)")
     sub.add_argument("--sole-survivor", action="store_true", help="pay willpower instead of a condition (the Sole Survivor heroic ability)")
@@ -1548,7 +1717,7 @@ def _parser():
     sub.add_argument("--meaning", action="store_true", help="words to interpret, for questions a yes or no can't answer")
     sub.add_argument("--kind", help="with a fortune chart: yes_no (default), number, scale, power, quality, reaction")
     odds = sub.add_mutually_exclusive_group()
-    odds.add_argument("--likely", help=f"one of: {', '.join(campaign.LIKELIHOOD)}")
+    odds.add_argument("--likely", help=f"one of: {', '.join(campaign.LIKELIHOOD)} (Ironsworn: small chance, unlikely, 50/50, likely, almost certain)")
     odds.add_argument("--npc", help="take the odds from this NPC's attitude and promises")
     sub = command("move", cmd_move, "take an exit")
     sub.add_argument("exit")
@@ -1613,10 +1782,12 @@ def _parser():
     sub.add_argument("--player", action="store_true", help="the player said it")
     sub.add_argument("--hook", action="store_true", help="read a Claude Code hook's JSON from stdin")
 
-    sub = command("gm", cmd_gm, "the Book's GM: turn [text | -], stop, status, agent, pace [quick|normal|careful]")
-    sub.add_argument("action", choices=["turn", "stop", "status", "agent", "pace"])
-    sub.add_argument("text", nargs="*", help="turn: what the player says (none: the GM opens or picks up the story); pace: the new pace")
+    sub = command("gm", cmd_gm, "the Book's GM: turn [text | -], stop, status, agent, pace [quick|normal|careful], budget [dollars]")
+    sub.add_argument("action", choices=["turn", "stop", "status", "agent", "pace", "budget"])
+    sub.add_argument("text", nargs="*", help="turn: what the player says (none: the GM opens or picks up the story); pace: the new pace; budget: dollars a session may spend")
     sub.add_argument("--agent", help="turn: an agent other than the default (claude, codex)")
+    sub.add_argument("--turns", type=int, help="budget: GM turns a session may run (for an agent that doesn't say what a turn costs)")
+    sub.add_argument("--reset", action="store_true", help="budget: start counting this campaign's session again")
 
     sub = command("desk", cmd_desk, "desktop effects: flash dragon|demon|hit, dying on [failures]|off, death, candle on|off, omen <text>, screensaver on|off, sound [name], restore, settings [name=on|off]")
     sub.add_argument("--after", type=float, default=0, metavar="SECONDS", help="wait first (to land with the Book's dice)")
@@ -1628,8 +1799,11 @@ def _parser():
     sub.add_argument("--out", help="folder to write (default: ~/Games/solo/sources/<book>)")
     sub.add_argument("--no-tables", action="store_true", help="skip table detection (faster on a long book)")
 
-    sub = command("import", cmd_import, "build pack files: from a Foundry export, or a book's roll table")
+    sub = command("import", cmd_import, "build pack files: from a Foundry export, a book's roll table, or Datasworn's Ironsworn")
     sources = sub.add_subparsers(dest="source", required=True, metavar="source")
+    sub = sources.add_parser("datasworn", help="Ironsworn's moves, oracles and assets (the CC BY parts) from Datasworn's classic.json")
+    sub.add_argument("json", help="Datasworn's Ironsworn ruleset: classic.json, from github.com/rsek/datasworn")
+    sub.add_argument("--out", required=True, help="the system pack folder: moves/, tables/ and assets/ are written in it")
     sub = sources.add_parser("foundry", help="adventures, rules and characters from Foundry VTT's Export Data")
     sub.add_argument("kind", choices=["adventure", "rules", "character"])
     sub.add_argument("paths", nargs="+", help="exported JSON files or folders of them")

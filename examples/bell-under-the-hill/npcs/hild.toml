@@ -1,0 +1,12 @@
+name = "Hild"
+role = "The Warden of the barrow, and keeper of its bell"
+description = "A woman in a shroud the colour of river-ice, her hands on an iron staff, her eyes two pale lamps."
+attitude = "unfriendly"
+wants = "The oath kept: three lamps, three names, oil and bread. And her ford's people to remember her."
+fears = "Being forgotten. It is the only thing that has ever frightened her, and it has happened."
+voice = "Formal and cadenced, a law being read aloud. She never raises her voice."
+
+[[secrets]]
+id = "the_grief"
+text = "She does not want to hurt anyone. She rang the bell because it was the only way left to be heard, and she took the sleepers because a bell must be rung. She would give them back for a word from someone who still keeps the oath."
+reveal = "fact.lamps.lit or fact.bell.silenced"

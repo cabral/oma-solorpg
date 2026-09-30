@@ -21,6 +21,8 @@ packs/*/gear.toml
 packs/*/bestiary/
 packs/*/inventory.toml
 packs/*/inventory/
+# The one exception: Ironsworn's oracles are CC BY, and ship with credit (NOTICE.md).
+!packs/ironsworn/tables/
 examples/*/inventory.toml
 examples/*/inventory/
 *.pdf

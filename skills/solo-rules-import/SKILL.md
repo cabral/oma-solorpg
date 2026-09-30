@@ -12,7 +12,8 @@ Read `docs/INGESTION.md` (how books became packs before, and what went wrong) an
 ## Before you start: settle with the user
 
 1. Which book, and where the PDF is. The PDF never goes through the chat.
-2. Where the pack goes. For Dragonbane, `make rules` has set it up (see "Dragonbane: what the bundled pack leaves to the book" below): the rulebook goes in `~/Games/solo/systems/dragonbane-rulebook/`, laid over the bundled pack (`extends = "bundled:dragonbane"`), and `~/Games/solo/systems/dragonbane/` sits on top of it, the pack campaigns use, holding the solo rules when the user has that book. A game the repository doesn't have gets a full pack in `~/Games/solo/systems/<game>/`.
+2. Where the pack goes (`make rules` stops if an older, unlayered pack is at `~/Games/solo/systems/dragonbane`; move it aside, never over it, and keep it to compare with). For Dragonbane, `make rules` has set it up (see "Dragonbane: what the bundled pack leaves to the book" below): the rulebook goes in `~/Games/solo/systems/dragonbane-rulebook/`, laid over the bundled pack (`extends = "bundled:dragonbane"`), and `~/Games/solo/systems/dragonbane/` sits on top of it, the pack campaigns use, holding the solo rules when the user has that book. A game the repository doesn't have gets a full pack in `~/Games/solo/systems/<game>/`.
+   Another book over the rulebook (a card deck, the Book of Magic, a bestiary) is a pack of its own, `~/Games/solo/systems/dragonbane-<id>/` with `extends = "dragonbane-rulebook"`, so it audits against its own pages; the top pack lists it: `extends = ["dragonbane-rulebook", "dragonbane-<id>", ...]` (later ones win). `make supplement ID=<id> BOOK=<pdf>` starts one.
 3. What may be committed to the repository: nothing from the book, ever. This repository is public, and the publisher's license lets it use the game's terms but not carry a copy of its rules. The book's text, tables and numbers stay in `~/Games/solo`.
 
 ## The pipeline
@@ -26,16 +27,18 @@ solo extract ~/Books/<book>.pdf          # into ~/Games/solo/sources/<book>/
 
 Check what it says and what it wrote:
 
-- Pages that need OCR: run `ocrmypdf` on the PDF and extract again.
+- Pages with almost no text and a picture (`scanned` in the manifest): covers and chapter openers look like this and need nothing. Only if a page that should hold text is among them, run `ocrmypdf` on the PDF and extract again (`uvx ocrmypdf --force-ocr in.pdf out.pdf` needs no install beyond tesseract).
+- A card deck is different: each card is a page, and its text layer holds some of the words (a card's name, a value) and misses others, because they are art. OCR of decorated cards misreads them ("sflver coms"), so read the pictures. Render each card's face (PyMuPDF `page.get_pixmap`, or a contact sheet of the card faces), read every value off it, and write what the PDF's text lacks into `picture/<page>.txt` beside `pages/` in the extract (a new extract leaves that folder alone). The audit reads it after the page's own text and lists the pages it came from: tell the user to look at those pages themselves, since the pack is then checked against your reading. Keep the contact sheet in the extract for them to look at.
 - `toc.json` from the PDF's outline, or guessed from font sizes (then check it against the contents page).
 - `manifest.json`: `running` lists the headers and footers taken out of the text; `labels` maps PDF pages to printed ones (`labels_from` says whether from the PDF or its footers). Cite PDF pages everywhere; use `labels` to follow the book's own "see page 42".
-- `chapters/` is what you read, a chapter at a time. `tables/` has each table found, as Markdown and as a picture of its page. When a table's columns come out scrambled, the picture is the truth.
+- `chapters/` is what you read, a chapter at a time. `tables/` has each table found, as Markdown and as a picture of its page. When a table's columns come out scrambled, the picture is the truth (open the PNG and read it).
+- What the extract gets wrong in a typeset book: the drop cap of a chapter opener is lost ("he adventurer"), a sidebar lands in the middle of a sentence on a two-column page, and a heading can end up under the wrong entry. Read every opener's first words, and expect to cut sidebars out by line number.
 
 ### 2. Start the pack and its inventory
 
 ```bash
 mkdir -p ~/Games/solo/systems/dragonbane-rulebook
-echo 'extends = "bundled:dragonbane"' > ~/Games/solo/systems/dragonbane-rulebook/system.toml
+printf 'format = 1\nextends = "bundled:dragonbane"\n' > ~/Games/solo/systems/dragonbane-rulebook/system.toml
 solo inventory ~/Games/solo/systems/dragonbane-rulebook --extract ~/Games/solo/sources/<book>
 ```
 
@@ -47,7 +50,9 @@ solo inventory ~/Games/solo/systems/dragonbane-rulebook --extract ~/Games/solo/s
 
 Read the chapter from `chapters/`, then its inventory file. For each item, decide where it goes (the table below) and write it there. Keep the book's wording for anything the GM reads; keep numbers exact.
 
-On a long book, give each chapter to its own agent. Each writes only its own files: its `inventory/<chapter>.toml`, the tables, rules pages and bestiary entries it creates, and `drafts/<chapter>.toml` for anything that goes into the shared files (`system.toml`, `gear.toml`, `creation.toml`). You merge the drafts. Ids are shared across the whole pack; `solo audit` reports an item id used twice.
+The scaffold's items are a first cut, and on a book with regular structure it is faster to write the inventory yourself from a script than to edit a hundred items: each item's `to` list comes from the files that exist (every ability's page, every spell of a school, every price of a category on its page), so nothing is left unclaimed, and what is left to judge is each item's pages, kind and note. Give each engine mechanic the book has and the engine doesn't its own `engine` item.
+
+On a long book, you can give each chapter to its own agent. Each writes only its own files: its `inventory/<chapter>.toml`, the tables, rules pages and bestiary entries it creates, and `drafts/<chapter>.toml` for anything that goes into the shared files (`system.toml`, `gear.toml`, `creation.toml`). You merge the drafts. Ids are shared across the whole pack; `solo audit` reports an item id used twice.
 
 ### 4. Tables
 
@@ -56,7 +61,9 @@ solo import table ~/Games/solo/sources/<book>/tables/p0045-1.md --out <pack>/tab
 sed -n '12,20p' ~/Games/solo/sources/<book>/pages/0045.txt | solo import table - --out <pack>/tables/fear.toml --pages 45
 ```
 
-It reads a Markdown grid or roll lines ("2-3 Shaken"), takes the dice from the header ("D6", "2D6", "D66") or the ranges, joins results that run onto a second line, and says when the ranges don't cover the dice. Check the result against the page's picture. Then add what the engine runs: `damage` (with `defend`, `parry`, `armor`) on a monster's attack results, `roll` for a value written as `{value}`, `choices`, `then` for a table rolled next. Never retype a table by hand when this can read it.
+It reads a Markdown grid or roll lines ("2-3 Shaken", or the row number alone on its line with the text after it, which is how most books' text comes out), takes the dice from the header ("D6", "2D6", "D66") or the ranges, joins results that run onto a second line, and says when the ranges don't cover the dice. A number starts a row only if it is the next one and within the header's die, so "20 meters..." at the start of a wrapped line stays in its result. Slice the table's lines out of the page (a range of lines, or between two headings), pipe them in, and check the result against the page's picture.
+
+Tables the text can't give you: two columns side by side, interleaved (`--sorted` style: read every row's number and text, then order by number), and tables of several columns that are really several tables (random NPCs, quests, journeys, sites: one die per column). Read those from the picture into a table per column, and let the first column's results roll the rest with `then` so one roll reads as the book's sentence. Then add what the engine runs: `damage` (with `defend`, `parry`, `armor`) on a monster's attack results, `roll` for a value written as `{value}`, `choices`, `then` for a table rolled next. Never retype a table by hand when this can read it.
 
 ### 5. What the book holds, and where it goes
 
@@ -82,6 +89,13 @@ It reads a Markdown grid or roll lines ("2-3 Shaken"), takes the dice from the h
 | Credits, index, contents, adverts | `skipped` |
 
 The bundled pack has no numbers at all: every number in your pack comes from a page, and every section the bundled pack lists under `needs` must be in it before a campaign can start.
+
+Names the engine matches by slug, so they must agree:
+
+- A hero's item is a weapon or armor when its slug is a key of `[weapons]` or `[armor]`. Key them as the kits write them, adjective first (`small_shield`, `light_warhammer`, `light_crossbow`, `leather_armor`), give a shield the skill BRAWLING if the book names none for it, and check that every weapon and armor any kit hands out is a key.
+- Top-level keys of `system.toml` (`untrained`, `needs`) go above the first `[table]`; written below one, they belong to it.
+- A price the engine can't read (`2 gold x potency`, `2 gold/day`, a dash) is `price = "varies"`, or the amount without its unit, with the rest in the entry's `note`. A value the book derives without printing it (a power attack that rolls twice the weapon's dice) is written as the printed terms (`2d8+2d8`), so each is found on a cited page.
+- A table the adventures name must have the id they use. From the private adventures that play on Dragonbane: the core rules' `fear`, a monster's attack table `<monster>_attacks` (`ghost_attacks`), and from the solo rules the tables `areas`, `inhabitants`, `location_details`, `treasure`, `harm` and `traps`, with `threats`, `search`, `scavenge`, `npc_attacks`, `demon_effects`, `dragon_effects`, `inspiration_action`, `inspiration_attribute`, `inspiration_thing` and `location_danger` for the sections named above (`tests/fixtures/house/tables` has the shapes). Random tables the core rules have follow the same habit: `<what>` or `<what>_<column>` (`severe_injuries`, `magical_mishaps`, `journey_mishaps`, `hunting`, `quest_hook`, `nicknames_<profession>`).
 
 ### Dragonbane: what the bundled pack leaves to the book
 
@@ -114,7 +128,7 @@ And from the solo rules, when the user has them, into the top `dragonbane` pack 
 | `[rest.stretch] tend`, `[dying] self_rally`, `self_save` | healing alone and rallying alone |
 | `tables/` | every table those name, and the booklet's others (harm, traps, areas, locations), exact |
 
-A deck of cards that comes in the box (treasure cards) isn't in a PDF: type it into `tables/` only if the user hands you the cards' text, and mark the item `house` with where it came from. `tests/fixtures/house` shows every one of these keys in use, with made-up values: read it for the shapes, never for the numbers.
+A deck of cards (treasure, adventure, improvised weapons) is a book of its own, and its pack is one too (`make supplement ID=<id> BOOK=<pdf>`, laid over the rulebook and listed under the top pack's `extends`, the rulebook first). A deck of coins and finds is one table with a result to a card: `range = [n, n]`, `page = <its PDF page>` (the audit then reads that card against its own page, not the whole deck), `text` with `{value}` and `roll = "2d6x10"` for a value the card rolls, `choices` for a card that says "roll a D6: 1: dagger, 2: ...", a `then` for a card that sends you on. Cards that are one-off rules (improvised weapons) are a page each in `rules/`, plus an index page whose `Search:` holds the shared words; give each page only its own name, or a search for one card finds another. The rest of the solo booklet, and its adventure, is mapped as above: the adventure's missions are `skipped` here ("for the adventure pack") and built with the `solo-import` skill. `tests/fixtures/house` shows every one of these keys in use, with made-up values: read it for the shapes, never for the numbers.
 
 ### 6. Rules pages the GM can find
 
@@ -127,7 +141,9 @@ Search: travel, travel time, journey, distance, kilometers, getting lost, pathfi
 (the book's text for this topic, or your faithful summary with every number)
 ```
 
-GMs search by what they need in the moment, not by the book's headings: "prices", "inn", "travel time", "how far", "fear", "poison", "bartering". Give every page the words of the questions it answers. The GM reads one page at a time, so split a long chapter into pages of one topic each. Pages built from the book's text stay in the private pack.
+GMs search by what they need in the moment, not by the book's headings: "prices", "inn", "travel time", "how far", "fear", "poison", "bartering". Give every page the words of the questions it answers (a word of three letters or fewer has to match whole: "inn" is never "innate"). The GM reads one page at a time, so split a long chapter into pages of one topic each: a page for each heroic ability, skill and spell, and a page for each rule topic. Pages built from the book's text stay in the private pack.
+
+For a regular list, write a throwaway script that slices the extract between headings: it saves the retyping that gets numbers wrong. It has to join a word broken by a soft hyphen at a line's end without a space, read a non-breaking space as a space in headings, know the few headings the book sets in mixed case, and not take a sentence's last word in capitals for a heading. Lift sidebars out by line number into pages of their own, write flattened tables in words (`Age table: 1-3 Young: ...`), and end every page with where it is from (`Source: ..., PDF p. 34 (printed 32)`). Then scan the pages for a paragraph that starts in lowercase: that is where a sentence was cut. Point every table's page at it (`The table is solo table fear (D8)`).
 
 ### 7. Check it
 
@@ -155,7 +171,7 @@ solo -C /tmp/check commit '{"npc": {"wolf_1": {"name": "Wolf", "monster": "wolf"
 solo -C /tmp/check fight wolf_1
 ```
 
-Every page should come up from a GM's words, and a monster should fight from its table. For the risky rules, write a scenario in `tests/gm_eval/scenarios/` and run it with a real GM (tests/gm_eval/README.md).
+Every page should come up from a GM's words, and a monster should fight from its table. Also try a rest twice in a shift (the second is refused), a push, three death rolls, and a table that chains (`solo table quest_when`). Keep those as fixed-dice tests in the pack's own `checks/` (`<pack>/checks/test_*.py`, unittest, the book's page in each test's name): `make check` runs them after the audit, and they say when the engine or the pack changes a rule. Then lay the adventures you already have over the new rules (`solo validate --system dragonbane --adventure <folder>`): every table or key one names that the import named differently is a gap in this skill, and the ids above are how they are closed. For the risky rules, write a scenario in `tests/gm_eval/scenarios/` and run it with a real GM (tests/gm_eval/README.md).
 
 ### 9. Walk the user through it
 

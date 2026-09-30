@@ -46,6 +46,19 @@ _WRITE_EVERY = 0.08
 # Seconds an agent may go without a word (no line on its stream) before its turn is ended.
 # SOLO_GM_TIMEOUT changes it.
 _QUIET_LIMIT = 180
+# What one GM turn may not go past, whatever the agent does: seconds on the clock (a GM that keeps
+# talking, or keeps calling solo, never goes quiet), and, for Claude Code, model calls. SOLO_GM_MAX_SECONDS
+# and SOLO_GM_MAX_TURNS change them.
+_MAX_SECONDS = 900
+_MAX_TURNS = 40
+# What one session of a campaign may spend, counted from the usage each turn records: dollars, where the
+# agent says what a turn cost (Claude Code), and turns, for the agent that doesn't (Codex). The player raises
+# either with `solo gm budget`; SOLO_GM_BUDGET_USD and SOLO_GM_BUDGET_TURNS override the setting.
+_BUDGET_USD = 10.0
+_BUDGET_TURNS = 200
+# Tools a GM turn is never given, on top of the short list of `solo` commands it is allowed: nothing on the web,
+# and no file written outside solo.
+_DENIED = ("WebFetch", "WebSearch", "Edit", "Write", "NotebookEdit")
 # The GM's pace, which the player picks on the Table, and the effort level it asks of the
 # agent. A quick turn arrives sooner and spends fewer tokens. A careful one thinks longer
 # about the rules.
@@ -55,11 +68,11 @@ _DOING = {
     "scene": "reading the scene", "npc": "reading the scene", "rule": "looking up the rules",
     "state": "reading the table", "log": "reading the table", "resume": "reading the table",
     "recall": "remembering", "history": "remembering",
-    "check": "rolling the dice", "push": "rolling the dice", "roll": "rolling the dice", "table": "rolling the dice",
+    "check": "rolling the dice", "push": "rolling the dice", "act": "rolling the dice", "burn": "rolling the dice", "roll": "rolling the dice", "table": "rolling the dice",
     "ask": "asking the oracle", "voice": "listening", "attack": "rolling the dice", "enemy": "rolling the dice", "ally": "rolling the dice", "wound": "rolling the dice",
     "defend": "rolling the dice", "death-roll": "rolling the dice", "rally": "rolling the dice", "advance": "rolling the dice",
     "commit": "writing it down", "threat": "writing it down", "search": "rolling the dice", "scavenge": "rolling the dice", "move": "writing it down", "fight": "writing it down", "rest": "writing it down",
-    "light": "writing it down", "mark": "writing it down", "say": "writing it down",
+    "light": "writing it down", "mark": "writing it down", "track": "writing it down", "say": "writing it down",
 }
 
 
@@ -140,6 +153,7 @@ def turn(root, text=None, agent=None):
         # A turn that was killed (the shell went down with it) can leave its agent running,
         # still rolling and writing. Two GMs on one table contradict each other: end it first.
         _reap(root)
+        _trim(folder / "trace.jsonl")
         live = Live(folder / "turn.json", text)
         # From here the Book is watching: whatever goes wrong ends up in turn.json, where it
         # says what happened and offers to try again, instead of "thinking" for good.
@@ -165,18 +179,23 @@ def _turn(root, folder, text, agent, live):
     saved = _load(folder / "agent.json")
     session = saved.get("session") if saved.get("agent") == agent else None
     adapter = ADAPTERS[agent]
-    result = adapter.run(root, player_prompt(text, table) if session and text else BOOK_PROMPT, session, live)
+    used = spent(root, session)
+    over = overspent(used)
+    if over:
+        return live.fail(over)
+    result = adapter.run(root, player_prompt(text, table) if session and text else BOOK_PROMPT, session, live, budget_left(used))
     result["stopped"] = result.get("stopped") or _asked_to_stop(folder, live)
     if result.get("stale") and not result["stopped"]:
         # The agent lost the session (cleared, or another machine): start a fresh one,
         # which catches up from the campaign itself.
         live.reset()
-        result = adapter.run(root, BOOK_PROMPT, None, live)
+        result = adapter.run(root, BOOK_PROMPT, None, live, budget_left(spent(root, None)))
         result["stopped"] = result.get("stopped") or _asked_to_stop(folder, live)
-    # What the turn cost, for play tests and the curious: the Book doesn't show it.
+    # What the turn cost: kept with the turn, and added to what the session has spent so far.
     live.update(usage=result.get("usage"))
     if result.get("session"):
         (folder / "agent.json").write_text(json.dumps({"agent": agent, "session": result["session"]}) + "\n", encoding="utf-8")
+        _record_spend(folder, used if result["session"] == session else spent(root, None), result)
     if result.get("stopped"):
         live.update(force=True, status="stopped", text="", agent_pid=None)
         return live.data
@@ -270,22 +289,24 @@ class Adapter:
     """Runs one agent turn and reads its JSON lines. Subclasses build the command and
     read the events; `run` returns {session, text, error, stale}."""
 
-    def command(self, prompt, session):
+    def command(self, prompt, session, left=None):
         raise NotImplementedError
 
     def read(self, event, result, live):
         raise NotImplementedError
 
-    def run(self, root, prompt, session, live):
+    def run(self, root, prompt, session, live, left=None):
         env = {k: v for k, v in os.environ.items() if k not in NESTING}
         # The GM's `solo` is this plugin's, whether or not `solo setup` put one on PATH.
         # SOLO_BOOK: this turn's final message is recorded by `turn`, so `solo say` stands down.
         env.update(PATH=f"{REPO / 'bin'}:{env.get('PATH', '')}", PWD=str(root), SOLO_GM=str(root), SOLO_BOOK="1")
+        # Every `solo` command the GM runs, refused ones too, for `solo report` (a play test's own trace file wins).
+        env.setdefault("SOLO_TRACE", str(Path(root) / ".solo" / "trace.jsonl"))
         # stderr goes to a file: a pipe nobody reads while stdout streams can fill and stall the agent.
         with tempfile.TemporaryFile("w+") as errors:
             try:
                 process = subprocess.Popen(
-                    self.command(prompt, session), cwd=root, env=env, stdin=subprocess.DEVNULL,
+                    self.command(prompt, session, left), cwd=root, env=env, stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE, stderr=errors, text=True, start_new_session=True,
                     preexec_fn=_die_with_parent,
                 )
@@ -295,13 +316,15 @@ class Adapter:
             result = {"session": session, "text": "", "error": "", "stale": False}
             # An agent that hangs (a stalled connection, a question nobody will answer) would
             # leave the Book thinking for good: one that goes quiet too long is ended.
-            limit, heard, silent = _quiet_limit(), time.monotonic(), threading.Event()
+            # A turn that never goes quiet (a GM that keeps talking, or keeps calling solo) is ended on the clock.
+            limit, ceiling, began = _quiet_limit(), _max_seconds(), time.monotonic()
+            heard, silent, late = began, threading.Event(), threading.Event()
 
             def watch():
-                while process.poll() is None and time.monotonic() - heard < limit:
+                while process.poll() is None and time.monotonic() - heard < limit and time.monotonic() - began < ceiling:
                     time.sleep(1)
                 if process.poll() is None:
-                    silent.set()
+                    (silent if time.monotonic() - heard >= limit else late).set()
                     _end_group(process)
 
             threading.Thread(target=watch, daemon=True).start()
@@ -318,6 +341,8 @@ class Adapter:
             errors = errors.read()
         if silent.is_set():
             result["error"] = f"The GM said nothing for {limit:g} seconds, so its turn was ended. Try again."
+        elif late.is_set():
+            result["error"] = f"The GM's turn ran past {f'{ceiling:g} seconds' if ceiling < 120 else f'{ceiling / 60:g} minutes'}, so it was ended. Try again."
         elif process.returncode < 0:
             result["stopped"] = True
         elif process.returncode and not result["text"]:
@@ -338,10 +363,13 @@ class Adapter:
 class Claude(Adapter):
     """Claude Code: `claude -p` with stream-json, partial messages for live typing."""
 
-    def command(self, prompt, session):
+    def command(self, prompt, session, left=None):
         tools = [f"Bash(solo {name}:*)" for name in campaign_commands()]
         command = ["claude", "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
-                   "--allowedTools", *tools]
+                   "--allowedTools", *tools, "--disallowedTools", *_DENIED, "--max-turns", str(_max_turns())]
+        # What the session has left to spend is a ceiling on this turn too.
+        if left and left.get("usd"):
+            command += ["--max-budget-usd", f"{left['usd']:.2f}"]
         # The prompt goes last, after --: the player's words can start with a dash.
         return command + _model() + ["--effort", effort()] + (["--resume", session] if session else []) + ["--", prompt]
 
@@ -373,7 +401,7 @@ class Claude(Adapter):
             }
             if event.get("is_error") or event.get("subtype") != "success":
                 reason = event.get("result") or "\n".join(map(str, event.get("errors") or []))
-                result["error"] = _first_line(reason) or "The GM ran into an error."
+                result["error"] = _STOPPED_AT.get(event.get("subtype")) or _first_line(reason) or "The GM ran into an error."
             else:
                 result["text"] = event.get("result") or live.data["text"]
 
@@ -381,7 +409,7 @@ class Claude(Adapter):
 class Codex(Adapter):
     """Codex: `codex exec --json`, resumed by thread id. Its messages come whole."""
 
-    def command(self, prompt, session):
+    def command(self, prompt, session, left=None):
         # Codex has no list of allowed commands: its sandbox lets the GM write in the campaign
         # folder (which `solo` needs) and nowhere else. (`--full-auto` said the same, until
         # Codex dropped it.)
@@ -409,6 +437,86 @@ class Codex(Adapter):
 
 
 ADAPTERS = {"claude": Claude(), "codex": Codex()}
+# What Claude Code's result says when a limit ended the turn.
+_STOPPED_AT = {
+    "error_max_turns": "The GM used all the model calls a turn is allowed and was stopped. Try again, or ask for less at a time.",
+    "error_max_budget_usd": "The GM reached this session's spending limit and was stopped. Raise it with: solo gm budget <dollars>",
+}
+
+
+def _number(name, default):
+    try:
+        value = float(os.environ.get(name) or default)
+        return value if value > 0 else float(default)
+    except ValueError:
+        return float(default)
+
+
+def _max_seconds():
+    return _number("SOLO_GM_MAX_SECONDS", _MAX_SECONDS)
+
+
+def _max_turns():
+    return int(_number("SOLO_GM_MAX_TURNS", _MAX_TURNS))
+
+
+def budget():
+    """What a session may spend: the environment, else what the player set, else the defaults."""
+    saved = _load(state_home() / "gm.json")
+    return {"usd": _number("SOLO_GM_BUDGET_USD", saved.get("budget_usd") or _BUDGET_USD),
+            "turns": int(_number("SOLO_GM_BUDGET_TURNS", saved.get("budget_turns") or _BUDGET_TURNS))}
+
+
+def set_budget(usd=None, turns=None):
+    """The player's limits, for every campaign (they own the bill)."""
+    for value in (usd, turns):
+        if value is not None and value <= 0:
+            raise SoloError("a limit is a number above zero")
+    path = state_home() / "gm.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    saved = _load(path)
+    if usd is not None:
+        saved["budget_usd"] = usd
+    if turns is not None:
+        saved["budget_turns"] = int(turns)
+    path.write_text(json.dumps(saved) + "\n", encoding="utf-8")
+    return budget()
+
+
+def spent(root, session):
+    """What the agent session has used so far, from the turns' own usage: a session that has none
+    (a new one) has spent nothing."""
+    saved = _load(Path(root) / ".solo" / "spend.json")
+    if session and saved.get("session") == session:
+        return {"session": session, "turns": saved.get("turns", 0), "cost_usd": saved.get("cost_usd", 0.0)}
+    return {"session": session, "turns": 0, "cost_usd": 0.0}
+
+
+def reset_spend(root):
+    """Start counting again, for a player who would rather not raise the limit."""
+    (Path(root) / ".solo" / "spend.json").unlink(missing_ok=True)
+
+
+def overspent(used):
+    """A plain sentence when the session has used its dollars or its turns, else None."""
+    limit = budget()
+    if used["cost_usd"] >= limit["usd"]:
+        return (f"This session has spent ${used['cost_usd']:.2f} of its ${limit['usd']:.2f} limit, so the GM stops here. "
+                f"Raise the limit with: solo gm budget {limit['usd'] * 2:g}")
+    elif used["turns"] >= limit["turns"]:
+        return (f"This session has run {used['turns']} GM turns, its limit, so the GM stops here. "
+                f"Raise the limit with: solo gm budget --turns {limit['turns'] * 2}")
+    return None
+
+
+def budget_left(used):
+    return {"usd": max(round(budget()["usd"] - used["cost_usd"], 2), 0.01)}
+
+
+def _record_spend(folder, used, result):
+    cost = (result.get("usage") or {}).get("cost_usd") or 0.0
+    (folder / "spend.json").write_text(json.dumps({"session": result["session"], "turns": used["turns"] + 1,
+                                                   "cost_usd": round(used["cost_usd"] + cost, 6)}) + "\n", encoding="utf-8")
 
 
 def _quiet_limit():
@@ -449,7 +557,7 @@ def set_pace(name):
         raise SoloError(f"no pace {name!r}; paces: {', '.join(PACES)}")
     path = state_home() / "gm.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"pace": name}) + "\n", encoding="utf-8")
+    path.write_text(json.dumps({**_load(path), "pace": name}) + "\n", encoding="utf-8")
     return name
 
 
@@ -541,6 +649,16 @@ def _alive(pid):
         return False
     except PermissionError:
         return True
+
+
+def _trim(path, keep=2000, over=512 * 1024):
+    """The trace of the GM's commands keeps its last `keep` lines once it passes `over` bytes."""
+    try:
+        if path.stat().st_size > over:
+            lines = path.read_text(encoding="utf-8").splitlines()[-keep:]
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except OSError:
+        pass
 
 
 def _asked_to_stop(folder, live):

@@ -383,6 +383,9 @@ def new(root, system_path, premise, tone="", missions=3, title=None, seed=None, 
     gaps = packs.missing(system)
     if gaps:
         raise SoloError(packs.missing_text(system, gaps))
+    elif system["family"] == "action-roll":
+        raise SoloError(f"{system['name']} is a game of moves: the generator still writes rolls by skill (solo check) and skill voices, "
+                        "which it doesn't have. Campaigns on it are on the roadmap (ROADMAP.md, item 6)")
     missions = int(missions)
     seed = int(seed) if seed is not None else random.SystemRandom().randrange(1_000_000)
     roller = Roller(system, dict(system["tables"]), random.Random(seed))
@@ -420,7 +423,7 @@ def new(root, system_path, premise, tone="", missions=3, title=None, seed=None, 
         ],
     }
     spec = {
-        "title": title, "system": system_name or Path(system_path).name,
+        "title": title, "format": packs.FORMAT, "system": system_name or Path(system_path).name,
         "summary": _summary(premise, tone, missions),
         "start": HUB, "chaos": 4, "draft": True,
         **({"move_time": Inline({world.move: 1})} if world.move else {}),

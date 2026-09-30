@@ -17,17 +17,18 @@ ADVENTURES := $(SOLO_HOME)/adventures
 # on top the pack campaigns use, which holds the solo rules when you have that book.
 RULEBOOK   := $(SYSTEMS)/dragonbane-rulebook
 TOP        := $(SYSTEMS)/dragonbane
-SOLO_TASK    = The solo rules are extracted in $(SOURCES)/dragonbane-solo and go into $(TOP) (it extends dragonbane-rulebook), whose inventory is started too.
+SOLO_TASK    = The solo rules are extracted in $(SOURCES)/dragonbane-solo and go into $(TOP) (it extends dragonbane-rulebook; a pack laid over the rulebook by make supplement is added to its extends list), whose inventory is started too.
 NO_SOLO_TASK = I have no solo rules book: leave $(TOP) as it is.
 
-.PHONY: help install deps rules check adventure check-adventure campaign campaign-next test qml-check site
+.PHONY: help install deps rules supplement check adventure check-adventure campaign campaign-next test qml-check site
 
 help:
 	@echo "oma-solorpg"
 	@echo ""
 	@echo "  make install                         link solo, the GM skills and the Omarchy plugin; enable the plugin"
 	@echo "  make rules BOOK=<pdf> [SOLO_BOOK=<pdf>]  build Dragonbane's rules from your rulebook (and the solo rules booklet)"
-	@echo "  make check                           validate the rules you built and audit them against the books"
+	@echo "  make supplement ID=<id> BOOK=<pdf>   lay one more book over the rulebook: a card deck, the Book of Magic"
+	@echo "  make check                           validate the rules you built, audit them against the books, run their own checks"
 	@echo "  make adventure ID=<id> PDF=<pdf>     start an adventure pack from a PDF you own"
 	@echo "  make adventure ID=<id> FOUNDRY=<dir> start one from a Foundry VTT export"
 	@echo "  make check-adventure ID=<id>         validate an adventure, show its outline, audit it"
@@ -59,8 +60,8 @@ rules: deps
 	@test -n "$(BOOK)" || { echo "usage: make rules BOOK=~/Books/<rulebook>.pdf [SOLO_BOOK=~/Books/<solo rules>.pdf]"; exit 2; }
 	@test -f "$(SOURCES)/dragonbane-rulebook/manifest.json" || $(SOLO_BIN) extract "$(BOOK)" --out "$(SOURCES)/dragonbane-rulebook"
 	@mkdir -p "$(RULEBOOK)" "$(TOP)"
-	@test -f "$(RULEBOOK)/system.toml" || echo 'extends = "bundled:dragonbane"' > "$(RULEBOOK)/system.toml"
-	@test -f "$(TOP)/system.toml" || echo 'extends = "dragonbane-rulebook"' > "$(TOP)/system.toml"
+	@test -f "$(RULEBOOK)/system.toml" || printf 'format = 1\nextends = "bundled:dragonbane"\n' > "$(RULEBOOK)/system.toml"
+	@test -f "$(TOP)/system.toml" || printf 'format = 1\nextends = "dragonbane-rulebook"\n' > "$(TOP)/system.toml"
 	@grep -q 'dragonbane-rulebook' "$(TOP)/system.toml" || { \
 	  echo "$(TOP)/system.toml doesn't extend dragonbane-rulebook: an older pack is there. Move it aside and run make rules again."; exit 1; }
 	@test -f "$(RULEBOOK)/inventory.toml" || $(SOLO_BIN) inventory "$(RULEBOOK)" --extract "$(SOURCES)/dragonbane-rulebook"
@@ -70,11 +71,26 @@ rules: deps
 	fi
 	@$(ASK) "$(SOLO_HOME)" "Use the solo-rules-import skill to build Dragonbane's rules from my books. The repository is $(CURDIR): read docs/INGESTION.md and docs/PACK_FORMAT.md there first. The rulebook is extracted in $(SOURCES)/dragonbane-rulebook and goes into $(RULEBOOK), whose inventory is started. $(if $(SOLO_BOOK),$(SOLO_TASK),$(NO_SOLO_TASK)) The bundled pack holds only names: every key it lists under needs must come from the rulebook. Work a chapter at a time, and run make check in the repository until it passes."
 
-# Each book's pack against its inventory and its pages, then the whole against what a
-# campaign needs.
+# One more book over the rulebook, in a pack of its own so it audits against its own pages: a
+# card deck, the Book of Magic, a bestiary. It is extracted, inventoried and mapped like the
+# rulebook; then it goes on the top pack's `extends` list, which is what campaigns play on.
+supplement:
+	@test -n "$(ID)" -a -n "$(BOOK)" || { echo "usage: make supplement ID=<id> BOOK=~/Books/<pdf>   (the pack is dragonbane-<id>)"; exit 2; }
+	@$(MAKE) --no-print-directory deps
+	@test -f "$(SYSTEMS)/dragonbane-rulebook/system.toml" || { echo "build the rulebook first: make rules BOOK=<rulebook pdf>"; exit 1; }
+	@test -f "$(SOURCES)/dragonbane-$(ID)/manifest.json" || $(SOLO_BIN) extract "$(BOOK)" --out "$(SOURCES)/dragonbane-$(ID)"
+	@mkdir -p "$(SYSTEMS)/dragonbane-$(ID)"
+	@test -f "$(SYSTEMS)/dragonbane-$(ID)/system.toml" || printf 'format = 1\nextends = "dragonbane-rulebook"\n' > "$(SYSTEMS)/dragonbane-$(ID)/system.toml"
+	@test -f "$(SYSTEMS)/dragonbane-$(ID)/inventory.toml" || $(SOLO_BIN) inventory "$(SYSTEMS)/dragonbane-$(ID)" --extract "$(SOURCES)/dragonbane-$(ID)"
+	@$(ASK) "$(SOLO_HOME)" "Use the solo-rules-import skill to build a supplement pack from my book. The repository is $(CURDIR): read docs/INGESTION.md and docs/PACK_FORMAT.md there first. The book is extracted in $(SOURCES)/dragonbane-$(ID) and goes into $(SYSTEMS)/dragonbane-$(ID) (it extends dragonbane-rulebook), whose inventory is started. Then list it in the extends of $(TOP)/system.toml (a list, the rulebook first: extends = [\"dragonbane-rulebook\", \"dragonbane-$(ID)\"]), and run make check in the repository until it passes."
+
+# Each book's pack (the rulebook, each supplement over it, the top pack) against its inventory
+# and its pages, and against its own fixed-dice checks if it has a checks/ folder (they hold
+# the book's numbers, so they live with the pack), then the whole against what a campaign needs.
 check:
-	@for pack in "$(RULEBOOK)" "$(TOP)"; do \
+	@for pack in "$(SYSTEMS)"/dragonbane-*/ "$(TOP)"; do \
 	  if [ -f "$$pack/inventory.toml" ]; then $(SOLO_BIN) audit --system "$$pack" || exit 1; fi; \
+	  if [ -d "$$pack/checks" ]; then OMA_SOLORPG="$(CURDIR)" python3 -m unittest discover -s "$$pack/checks" || exit 1; fi; \
 	done
 	$(SOLO_BIN) validate --system dragonbane
 
@@ -97,6 +113,7 @@ check-adventure:
 	$(SOLO_BIN) validate --adventure "$(ID)"
 	$(SOLO_BIN) outline --adventure "$(ID)"
 	@if [ -f "$(ADVENTURES)/$(ID)/inventory.toml" ]; then $(SOLO_BIN) audit --adventure "$(ID)"; fi
+	@if [ -d "$(ADVENTURES)/$(ID)/checks" ]; then OMA_SOLORPG="$(CURDIR)" python3 -m unittest discover -s "$(ADVENTURES)/$(ID)/checks"; fi
 	@if [ -f "$(ADVENTURES)/$(ID)/premise.toml" ] || [ -f "$(ID)/premise.toml" ]; then $(SOLO_BIN) campaign check "$(ID)"; fi
 
 # A campaign from a premise: the engine rolls its bones (the hub, the factions, the first

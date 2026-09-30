@@ -1,0 +1,13 @@
+name = "Osk"
+role = "The elder of Marrow Ford"
+description = "Old and straight-backed, with a blanket over his knees, sitting too close to a banked fire."
+faction = "marrow_ford"
+attitude = "neutral"
+wants = "The bell silenced, and nobody to ask why the lamps went dark."
+fears = "The truth being said aloud in his own hall; being the man who let the oath lapse."
+voice = "Courteous, slow, given to proverbs so as not to speak plainly."
+
+[[secrets]]
+id = "the_lamps"
+text = "He let the barrow's lamps go dark at midwinter. Oil was dear, and the young ones laughed at the custom. He knows exactly why the bell is tolling."
+reveal = "npc.osk.attitude >= friendly or fact.rhyme.known"

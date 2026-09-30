@@ -20,6 +20,7 @@ Item {
   property bool active: true       // the window is showing
   property bool codexOpen: false
   property bool epitaphDismissed: false
+  property bool cutting: false     // the X-card panel is open
   property int seen: -1            // the newest story seq already shown (no replays on load)
   readonly property bool epitaphShown: dead && !epitaphDismissed
 
@@ -27,6 +28,7 @@ Item {
   signal stop()
   signal retry()
   signal act(var args)             // an engine command for the table: ["light", "torch"]
+  signal cut(string note, string line, string veil)   // the X-card: cut the GM's last message, and maybe add a line or a veil
   signal openTable()
   signal openTerminal()
 
@@ -37,6 +39,8 @@ Item {
   readonly property var story: game && game.story ? game.story : []
   readonly property bool busy: turn && (turn.status === "thinking" || turn.status === "writing")
   readonly property bool dead: pc !== null && pc.dead === true
+  // There is a GM message to cut, and the GM isn't in the middle of writing another.
+  readonly property bool canCut: !busy && !dead && agent.book !== false && story.some(b => b.kind === "gm")
   readonly property bool carriesLight: pc !== null && pc.items.some(i => /(^|\s)torch(es)?$/i.test(i))
   // The story column's width: a line of about 75 characters, however wide the window.
   readonly property real measure: theme.prose * 38
@@ -49,6 +53,7 @@ Item {
     seen = -1
     epitaphDismissed = false
     codexOpen = false
+    cutting = false
     storyModel.clear()
     storyNewest = -1
   }
@@ -226,7 +231,7 @@ Item {
           }
 
           Repeater {
-            model: book.pc ? Object.keys(book.pc.tracks) : []
+            model: book.pc ? Object.keys(book.pc.tracks).filter(k => book.pc.tracks[k].min === undefined) : []
             delegate: Meter {
               required property string modelData
               theme: book.theme
@@ -234,6 +239,14 @@ Item {
               value: book.pc.tracks[modelData].value
               maximum: book.pc.tracks[modelData].max
             }
+          }
+
+          // Momentum runs below zero, so it has a bar of its own (Ironsworn).
+          Momentum {
+            visible: !!book.pc && !!book.pc.tracks.momentum && !!book.game.labels.momentum
+            theme: book.theme
+            track: book.pc && book.pc.tracks.momentum ? book.pc.tracks.momentum : ({ value: 0, max: 10 })
+            spec: book.game && book.game.labels.momentum ? book.game.labels.momentum : ({ min: -6, max: 10 })
           }
 
           Text {
@@ -271,6 +284,25 @@ Item {
           }
 
           Item { width: 1; height: book.theme.body * 0.4 }
+
+          Text {
+            visible: vows.visible
+            textFormat: Text.PlainText
+            font.family: book.theme.mono
+            font.pixelSize: book.theme.small
+            font.letterSpacing: 2
+            color: book.theme.dim
+            text: "VOWS AND ROADS"
+          }
+
+          Progress {
+            id: vows
+            theme: book.theme
+            progress: book.game && book.game.progress ? book.game.progress : ({})
+            spec: book.game && book.game.labels ? book.game.labels.progress : null
+          }
+
+          Item { visible: vows.visible; width: 1; height: book.theme.body * 0.4 }
 
           Text {
             textFormat: Text.PlainText
@@ -443,6 +475,74 @@ Item {
           }
         }
 
+        // The X-card ------------------------------------------------------------------------
+        // One tap cuts the GM's last message: it leaves the page, and the GM is told not to come
+        // back to it. The same panel can make what was cut a line (never again) or a veil (only off screen).
+
+        RowLayout {
+          Layout.fillWidth: true
+          visible: book.canCut && !book.cutting
+          Item { Layout.fillWidth: true }
+          Link { objectName: "cutLink"; text: "cut the GM's last message"; onClicked: { book.cutting = true; cutInput.forceActiveFocus() } }
+        }
+
+        Rectangle {
+          id: cutPanel
+          objectName: "cutPanel"
+          Layout.fillWidth: true
+          visible: book.canCut && book.cutting
+          implicitHeight: cutColumn.implicitHeight + book.theme.body * 1.6
+          radius: book.theme.radius
+          color: book.theme.surface
+          border.width: 1
+          border.color: book.theme.urgent
+
+          ColumnLayout {
+            id: cutColumn
+            anchors { left: parent.left; right: parent.right; top: parent.top; margins: book.theme.body * 0.8 }
+            spacing: book.theme.body * 0.6
+
+            Text {
+              Layout.fillWidth: true
+              wrapMode: Text.Wrap
+              textFormat: Text.PlainText
+              font.family: book.theme.serif
+              font.pixelSize: book.theme.prose * 0.95
+              color: book.theme.text
+              text: "Cut the GM's last message? It leaves the page, and the GM is told not to come back to it. Say what to avoid, if you like."
+            }
+
+            TextInput {
+              id: cutInput
+              objectName: "cutInput"
+              Layout.fillWidth: true
+              font.family: book.theme.serif
+              font.pixelSize: book.theme.prose
+              color: book.theme.text
+              selectionColor: book.theme.accent
+              clip: true
+              Keys.onEscapePressed: book.cutting = false
+              Keys.onReturnPressed: book.cutIt("")
+              Text {
+                visible: cutInput.text === ""
+                textFormat: Text.PlainText
+                font: cutInput.font
+                color: book.theme.faint
+                text: "what to avoid (optional)"
+              }
+            }
+
+            RowLayout {
+              spacing: book.theme.body
+              Link { objectName: "cutNow"; text: "cut"; onClicked: book.cutIt("") }
+              Link { objectName: "cutLine"; text: "cut, and never again"; enabled: cutInput.text.trim() !== ""; onClicked: book.cutIt("line") }
+              Link { objectName: "cutVeil"; text: "cut, off screen only"; enabled: cutInput.text.trim() !== ""; onClicked: book.cutIt("veil") }
+              Item { Layout.fillWidth: true }
+              Link { text: "keep it"; onClicked: book.cutting = false }
+            }
+          }
+        }
+
         // Writing to the GM ------------------------------------------------------------------
 
         Rectangle {
@@ -526,6 +626,14 @@ Item {
     game: book.game
     heroX: pageRow.x + side.width / 2
     heroY: pageRow.y + book.height * 0.3
+  }
+
+  // The X-card: what the player typed is a note to the GM, or a line (never in the story) or a veil (off screen).
+  function cutIt(as) {
+    var text = cutInput.text.trim()
+    cut(text, as === "line" ? text : "", as === "veil" ? text : "")
+    cutInput.text = ""
+    cutting = false
   }
 
   function submit() {

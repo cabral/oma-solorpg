@@ -1,0 +1,13 @@
+name = "Tam"
+role = "The ferryman of Marrow Ford"
+description = "An old man on an upturned boat, who talks to the river more than to people."
+faction = "marrow_ford"
+attitude = "neutral"
+wants = "Someone else to do what he could not: go up the hill and end it."
+fears = "That he saw the first night's walker and did nothing, and that everyone will know."
+voice = "Says less than he knows, and says it to the water. Dry, unhurried, ashamed."
+
+[[secrets]]
+id = "wens_eyes"
+text = "On the first night he saw Wen cross the ford barefoot with his eyes open, and he called out, and the boy did not turn. Tam was too afraid to follow him. He has not told a soul."
+reveal = "npc.tam.attitude >= friendly"

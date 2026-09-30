@@ -2,6 +2,7 @@
 # wait, a mine where they loom, a kind of foe the hero meets again and again, and someone
 # freed in the deep who is found again at home.
 title = "The Old Mine"
+format = 1
 system = "dragonbane"
 summary = "Goblins have taken the old mine above Hollowfell, and a miner with it."
 start = "village"

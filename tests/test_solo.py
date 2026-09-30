@@ -280,6 +280,14 @@ class SoloHero(CampaignTest):
             self.assertEqual((c.state["pc"]["dying"], c.state["pc"]["tracks"]["hp"]["value"]), (None, 4))
             self.assertEqual(campaign.fold(c.system, c.adventure, c.events), c.state)
 
+    def test_saving_your_own_life_gives_back_what_the_rulebook_gives_when_the_solo_rules_name_no_number(self):
+        with self.session() as c:
+            del c.system["dying"]["self_save"]["recover"]
+            c.system["dying"]["recover"] = "1d4"
+            c.commit({"pc": {"hp": 0}})
+            c.save_self(rng=Dice(2, 3))
+            self.assertEqual(c.state["pc"]["tracks"]["hp"]["value"], 3)
+
     def test_a_new_hero_gets_one_more_heroic_ability_for_going_alone(self):
         from solo import creation
         sheet = creation.character(packs.load_system(DRAGONBANE), "human mage", seed=4)

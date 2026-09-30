@@ -2,6 +2,7 @@
 # An imported adventure has the same shape: scenes.json and npcs/*.json come from the
 # importer, and this file adds what the text only implies.
 title = "The Red Tusk Hall"
+format = 1
 system = "dragonbane"
 summary = "The orcs on the hill have grown bold, and the village wants to know why. A short adventure: one evening, one hall, one choice about the orcs."
 start = "road"
