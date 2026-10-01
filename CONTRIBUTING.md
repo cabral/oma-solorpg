@@ -13,6 +13,8 @@ This repository is public, and a publisher's license lets a project like this us
 
 Before you push, read your own diff for anything you typed from a book, and say in the pull request where every number and text in it came from.
 
+`tests/test_no_book_text.py` checks the same thing by machine: when the books you own have been extracted (`solo extract`, or `SOLO_SOURCES` pointing at a folder of extracts), it fails on any run of eight words of a book in any file of the repository, committed or not. It has nothing to check without a book, so run `make test` once with yours at hand before you push a change to an importer.
+
 ## Running the checks
 
 ```bash
@@ -32,6 +34,10 @@ Every pull request runs `make test` on Python 3.11 and on the newest release ([.
 - Anything a pack can hold is documented in [docs/PACK_FORMAT.md](docs/PACK_FORMAT.md) in the same change. A change that would break a pack written for the format before it raises `packs.FORMAT`, writes the sentence an author needs into `packs.UPGRADES`, and adds a row to the history there. A key that older packs simply don't use doesn't.
 - The panel never writes campaign files and never computes rules: it runs `solo` and reads `state.json`. If it needs a fact, the engine adds it to `state.json` or `solo library`.
 - A desktop effect (`solo desk`) puts back exactly what it changed, and `solo desk restore` undoes them all ([docs/PLAN.md](docs/PLAN.md)).
+
+## Writing an importer: `solo/books`
+
+A recipe in `solo/books` turns one book into a pack, and it holds where things are and how to read them, never what they say ([docs/INGESTION.md](docs/INGESTION.md)). Find each value in the section of the book that states it by a short pattern made of the game's own terms, and make a section that no longer says it fail by name, so another printing is caught instead of guessed at. A recipe is tested with `tests/fake_book.py`, a book made of invented sections laid out like a real one; its numbers are made up, and the real book is only ever read at run time on the machine of someone who owns it. `solo audit` on what a recipe built should come back with nothing unclaimed, no problems and no uncited page.
 
 ## Testing the GM: `tests/gm_eval`
 

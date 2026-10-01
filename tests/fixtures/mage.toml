@@ -1,0 +1,30 @@
+# A made-up mage for the tests of magic: knows six spells and a trick, holds three ready.
+name = "Sibyl"
+conditions = []
+items = ["staff", "torch", "rope", "6 silver"]
+abilities = []
+spells = ["Spark", "Ember", "Mend", "Ward", "Gale", "Lash"]
+prepared = ["Ember", "Mend", "Ward"]
+
+[info]
+kin = "Elf"
+profession = "Mage"
+age = "Adult"
+
+[attributes]
+str = 9
+con = 12
+agl = 11
+int = 15
+wil = 13
+cha = 10
+
+[skills]
+elementalism = 12
+animism = 10
+languages = 8
+evade = 8
+
+[tracks]
+hp = 12
+wp = 13

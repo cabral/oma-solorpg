@@ -20,13 +20,14 @@ TOP        := $(SYSTEMS)/dragonbane
 SOLO_TASK    = The solo rules are extracted in $(SOURCES)/dragonbane-solo and go into $(TOP) (it extends dragonbane-rulebook; a pack laid over the rulebook by make supplement is added to its extends list), whose inventory is started too.
 NO_SOLO_TASK = I have no solo rules book: leave $(TOP) as it is.
 
-.PHONY: help install deps rules supplement check adventure check-adventure campaign campaign-next test qml-check site
+.PHONY: help install deps dragonbane rules supplement check adventure check-adventure campaign campaign-next test qml-check site
 
 help:
 	@echo "oma-solorpg"
 	@echo ""
 	@echo "  make install                         link solo, the GM skills and the Omarchy plugin; enable the plugin"
-	@echo "  make rules BOOK=<pdf> [SOLO_BOOK=<pdf>]  build Dragonbane's rules from your rulebook (and the solo rules booklet)"
+	@echo "  make dragonbane BOOKS=<folder of PDFs>  build Dragonbane's packs from your books (the rules, the Book of Magic, the card decks, the solo booklet), no agent"
+	@echo "  make rules BOOK=<pdf> [SOLO_BOOK=<pdf>]  the same by an agent, for printings the importers don't know"
 	@echo "  make supplement ID=<id> BOOK=<pdf>   lay one more book over the rulebook: a card deck, the Book of Magic"
 	@echo "  make check                           validate the rules you built, audit them against the books, run their own checks"
 	@echo "  make adventure ID=<id> PDF=<pdf>     start an adventure pack from a PDF you own"
@@ -51,6 +52,12 @@ install:
 deps:
 	@python3 -c "import pymupdf" 2>/dev/null || { \
 	  echo "solo extract needs PyMuPDF: uv pip install --system pymupdf"; exit 1; }
+
+# Dragonbane's packs from your own PDFs, without an agent: each book an importer here knows is read by its bookmarks and layout, and what the pack holds is checked
+# against the book's pages. Nothing of a book is in this repository: the importers hold where things are and how to read them. REPLACE=1 builds again over packs made this way.
+dragonbane: deps
+	@test -n "$(BOOKS)" || { echo "usage: make dragonbane BOOKS=~/Books/Dragonbane   (a folder of your PDFs, or one PDF)"; exit 2; }
+	$(SOLO_BIN) import book "$(BOOKS)" $(if $(REPLACE),--replace)
 
 # 1. The books as text, page by page (once: a second run keeps what is there).
 # 2. The two packs, each saying what it is laid over.

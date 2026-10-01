@@ -61,6 +61,7 @@ evade = "evade"
 track = "hp"
 unarmed = { label = "Unarmed", skill = "brawling", damage = "1d4", bonus = "str" }
 monster_parry = false
+repair = "crafting"
 
 [combat.damage_bonus]
 str = [[11, ""], [15, "1d4"], [18, "1d8"]]
@@ -72,12 +73,30 @@ short_sword = { skill = "swords", damage = "1d8", bonus = "str" }
 broadsword = { skill = "swords", damage = "2d6", bonus = "str" }
 spear = { skill = "spears", damage = "1d10", bonus = "str" }
 short_bow = { skill = "bows", damage = "1d8", bonus = "agl", parry = false }
-shield = { skill = "brawling", attack = false }
+shield = { skill = "brawling", attack = false, features = ["shield"] }
+# What the weapon tables give, made up: the hands, the STR asked for, the reach (meters, or STR for a
+# thrown weapon), what a parry costs it and what it is.
+parry_sword = { skill = "swords", damage = "1d8", bonus = "str", grip = 1, str = 10, range = 2, durability = 6, features = ["slashing"] }
+spike = { skill = "spears", damage = "1d8", bonus = "str", grip = 1, range = 2, durability = 7, features = ["piercing"] }
+twin_blade = { skill = "swords", damage = "1d8", bonus = "str", grip = 1, str = 10, range = 2, features = ["slashing", "piercing"] }
+long_axe = { skill = "axes", damage = "2d6", bonus = "str", grip = 2, str = 12, range = 2, durability = 8, features = ["slashing"] }
+hook_sword = { skill = "swords", damage = "1d10", bonus = "str", grip = 1, str = 18, range = 2, durability = 6, features = ["slashing"] }
+maul = { skill = "hammers", damage = "2d8", bonus = "str", grip = 2, str = 40, range = 2, durability = 9, features = ["bludgeoning"] }
+reed_bow = { skill = "bows", damage = "1d6", bonus = "agl", parry = false, ranged = true, grip = 2, str = 9, range = 30, durability = 3, features = ["piercing", "requires_quiver"] }
+dart = { skill = "knives", damage = "1d4", bonus = "agl", grip = 1, range = "str", durability = 2, features = ["piercing", "thrown"] }
 
 [armor]
 leather_armor = 1
 chainmail = 3
 open_helmet = 1
+
+# Made up: half the STR in items, a backpack two more, three weapons at hand for free.
+[encumbrance]
+attribute = "str"
+divisor = 2
+at_hand = 3
+coins = 100
+carriers = { backpack = 2 }
 
 [oracle]
 chart = "fortune"
@@ -141,3 +160,96 @@ initiative = 2
 [abilities.sole_survivor]
 name = "Sole Survivor"
 push = { wp = 3 }
+
+# Heroic abilities the engine runs, made up: what they cost (pay), and what they do.
+[abilities.tough]
+name = "Tough"
+max = { hp = 3 }
+stack = true
+
+[abilities.focus]
+name = "Focus"
+max = { wp = 2 }
+stack = true
+
+[abilities.quickdraw]
+name = "Quickdraw"
+pay = { wp = 2 }
+initiative_pick = 2
+requires = { skills = ["evade"], level = 12 }
+
+[abilities.steady]
+name = "Steady"
+pay = { wp = 1 }
+initiative_keep = true
+
+[abilities.guard_stance]
+name = "Guard stance"
+pay = { wp = 3 }
+reaction = "parry"
+
+[abilities.slayer]
+name = "Slayer"
+pay = { wp = 3 }
+extra_damage = "1d6"
+against = "monster"
+requires = { kind = "weapon", level = 12 }
+
+[abilities.heavy_swing]
+name = "Heavy swing"
+pay = { wp = 2 }
+extra_damage = "1d8"
+grip = 2
+melee = true
+
+[abilities.mender]
+name = "Mender"
+pay = { wp = 2 }
+heal = "1d4"
+rest = "stretch"
+
+[abilities.shield_wall]
+name = "Shield wall"
+pay = { wp = 2 }
+boon = "parry"
+weapon = "shield"
+unparryable = true
+
+[abilities.far_gaze]
+name = "Far gaze"
+pay = "varies"
+
+# Magic, made up: what a power level costs, what a body can give, the table a Demon rolls.
+[magic]
+cost = 3
+max_power = 3
+trick_cost = 1
+track = "wp"
+body = ["1d4", "1d6", "1d8", "1d10", "1d12", "1d20"]
+body_below = 2
+prepared = "int"
+mishap = "spell_mishaps"
+dragon = ["double", "free", "another"]
+trick_time = { stretch = 1 }
+learn = { teacher = { roll = "int", boons = 1 }, grimoire = { roll = "languages", boons = 0 } }
+
+# Journeys, made up: kilometers a shift, the days' shifts, the pathfinder's skill and the table a failure rolls.
+[journey]
+foot = 12
+mounted = 24
+shifts_per_day = 3
+travel_shifts = 2
+skill = "bushcraft"
+mishaps = "journey_mishaps"
+camp = { skill = "bushcraft", needs = "sleeping_fur", helps = "tent" }
+
+[abilities.trailwise]
+name = "Trailwise"
+pay = { wp = 1 }
+boon = "journey"
+
+# A school with no skill of its own, rolled as another (like Harmonism, which is PERFORMANCE), made up.
+[skills.chanting]
+attribute = "cha"
+untrained = false
+uses = "performance"

@@ -1,0 +1,6 @@
+name = "Thornback attacks"
+formula = "1d6"
+results = [
+  { range = [1, 3], text = "It drives a spine at you.", damage = "2d6", parry = true, kind = "piercing" },
+  { range = [4, 6], text = "It rakes you with a claw.", damage = "2d6", parry = true, kind = "slashing" },
+]

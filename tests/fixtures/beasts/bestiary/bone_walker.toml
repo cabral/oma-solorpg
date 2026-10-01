@@ -1,0 +1,15 @@
+name = "Bone walker"
+role = "A made-up undead for the tests"
+
+[stats]
+hp = 14
+armor = 1
+resist = ["piercing"]
+
+[attack]
+label = "Rusty blade"
+value = 10
+damage = "1d8"
+
+[skills]
+evade = 9

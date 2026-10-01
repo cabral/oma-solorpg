@@ -1,0 +1,9 @@
+name = "Mend"
+school = "animism"
+rank = 1
+prerequisite = ["animism"]
+casting_time = "action"
+range = "touch"
+duration = "instant"
+heal = "2d4"
+per_level = { add = "1d4" }

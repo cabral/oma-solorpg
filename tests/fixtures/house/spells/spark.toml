@@ -1,0 +1,7 @@
+name = "Spark"
+school = "elementalism"
+trick = true
+rank = 0
+range = 5
+casting_time = "action"
+duration = "instant"

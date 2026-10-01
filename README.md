@@ -6,7 +6,7 @@ It is a VTT, not a video game. There are no graphics beyond text: the scene is a
 
 - `solo` owns the dice, the rules, character creation and the campaign state. It is standard-library Python (3.11+), with no network access and no API keys. The agent brings the model.
 - An omarchy-shell plugin is the table: a d20 in the bar, the Book where the story is told, and a Table docked beside it where you start adventures, make heroes, roll, rest and ask the oracle.
-- It plays Ironsworn out of the box: the game's free rules ship in this repository, with credit (see [Ironsworn](#ironsworn) below), so a fresh install plays with no book. It also plays Dragonbane, from your own copy of the rules, which aren't in this repository (see [Dragonbane](#dragonbane)); `make rules` builds them from your PDF.
+- It plays Ironsworn out of the box: the game's free rules ship in this repository, with credit (see [Ironsworn](#ironsworn) below), so a fresh install plays with no book. It also plays Dragonbane, from your own copy of the books, which aren't in this repository (see [Dragonbane](#dragonbane)); `make dragonbane` builds it from your PDFs.
 
 > **Generative AI.** The game master is a generative AI: your agent writes the story as you play. Much of this project was also written with an AI coding agent, including its code, the text of The Red Tusk Hall, the hero names and the text-drawn art.
 
@@ -27,19 +27,21 @@ make install                                              # links solo, the GM s
 
 Then click the d20 in the bar, choose New adventure, pick **The Bell Under the Hill** and Begin. That is Ironsworn, and it needs nothing else: no book, no import.
 
-Dragonbane needs a PDF of its core rules from you. The solo rules (Alone in Deepfall Breach, from the core set) are optional but make solo play what the game intends.
+Dragonbane needs your own PDFs. Point `make dragonbane` at a folder of them and it builds every pack it has an importer for, in about twenty seconds and without an agent:
 
 ```bash
 uv pip install --system pymupdf                           # only the import reads PDFs
-make rules BOOK=~/Books/dragonbane-core.pdf SOLO_BOOK=~/Books/deepfall-breach.pdf
-make check                                                # once your agent says it's done
+make dragonbane BOOKS=~/Books/Dragonbane                  # a folder of your PDFs (or one PDF)
+make check                                                # audits each pack against its book
 ```
 
-`make rules` extracts each book to text, sets up your private rules packs in `~/Games/solo/systems/`, starts an inventory of every section and table in them, and then opens your agent with the `solo-rules-import` skill and a prompt that tells it what to do. The agent reads the books a chapter at a time and writes the numbers and tables the engine runs, each one citing its page. `make check` audits the packs against the books and says what's still missing. Nothing it writes lands in this folder. Then the Dragonbane adventures show up on the same New adventure screen.
+It reads each book's bookmarks and layout, writes your private packs into `~/Games/solo/systems/` and audits every one against the book's own pages. For the core rules that is everything the engine runs (the numbers of every roll and fight, the weapons and armor, all the gear, the tables, character creation, the bestiary, the heroic abilities, the spells), plus a rules page for each section of the book that has words of its own. The same goes for the Book of Magic (its schools, spells, tricks and recipes), the three card decks (treasure, improvised weapons, adventure hooks) and the solo booklet (the fortune chart, the inspiration table, the threat counter, the exploration tables). The importers are deterministic: the same PDFs give the same packs, and anything an importer had to decide it says in a note. Nothing of a book is in this repository (the importers hold where things are and how to read them; the words come from your PDF each time), and nothing they write lands in this folder.
 
-Every other book (the treasure, improvised weapon and adventure cards from the core set, the Book of Magic) is laid over the rulebook the same way, in a pack of its own that audits against its own pages: `make supplement ID=treasure-cards BOOK=~/Books/DB_Treasure_Cards.pdf`.
+A book no importer knows (another printing, an adventure) is read by your agent instead: `make rules BOOK=<pdf>` and `make supplement ID=<id> BOOK=<pdf>` start that, and `make adventure` does it for an adventure, with the `solo-rules-import` and `solo-import` skills. `make dragonbane` says which of your PDFs it left for them. Then the Dragonbane adventures you import show up on the same New adventure screen.
 
-`make` alone lists every target. `AGENT=codex make rules ...` picks the agent; the default is Omarchy's default agent.
+If you already have packs an agent wrote from the same books, `solo import book` won't overwrite them: build the new ones beside them (`--systems ~/Games/solo/new`) and `solo compare ~/Games/solo/new/dragonbane-rulebook ~/Games/solo/systems/dragonbane-rulebook` shows, area by area, what differs, before you decide which to keep.
+
+`make` alone lists every target. `AGENT=codex make rules ...` picks the agent for the ones that use one; the default is Omarchy's default agent.
 
 ## Play
 
@@ -49,7 +51,7 @@ With clicks only:
 2. New adventure: pick an adventure (The Bell Under the Hill plays Ironsworn with nothing else installed; The Red Tusk Hall plays on the Dragonbane rules you built from your book), then a hero: a pre-made one, or Random, with any kin, profession and age you want to lock in Dragonbane. Reroll until you like the sheet; type a name if you want one. Optionally set the tone and your lines and veils: things that never happen in the story, and things that happen only off screen. The GM reads them every session.
 3. Begin adventure. The Book opens beside the table, the scene's name decrypts across the page, and the GM writes the opening.
 4. Write to the GM at the bottom of the Book. Its answer streams in as it is written. On the table, click a skill or attribute to roll it (set boons and banes first), push a failed roll, rest, light a torch, or ask the oracle. The GM sees all of it in the log. In Ironsworn the table has moves instead of skills: click a move (and the stat it rolls, and any adds), burn momentum on a roll it could save, start a vow, mark progress on it, and make its progress roll.
-5. In Dragonbane, when the GM starts a fight, the Book draws it as a still scene (you, the foes in initiative order, the last blow between you) and the table shows your weapons. Pick a foe and click a weapon to attack; when a foe hits you, choose Evade, Parry or Take it. At 0 HP you're dying and Death roll is the only button left.
+5. In Dragonbane, when the GM starts a fight, the Book draws it as a still scene (you, the foes in initiative order, the last blow between you) and the table shows your weapons. Pick a foe and click a weapon to attack; when a foe hits you, choose Evade, Parry or Take it. A Dragon on your roll waits for what it does (double the blow, a free attack on another foe, pierce armor) in a card of its own. A hero with spells has them under Magic: set a power level, click a spell that is ready to cast it (the foe you picked takes the damage), prepare another from the Grimoire, or cast it from there. The abilities that go with a blow, a parry, a rest or a new round are switched on first and paid for with the roll; the others are one click and the GM reads their page. A weapon that is damaged or broken says so on its button, with Mend (a roll) and Artisan (none) in Gear, where the load shows too. At 0 HP you're dying and Death roll is the only button left.
 
 Right-click the d20 to open the Book again. The Campaigns button lists every game with its hero and scene, so resuming is one click. Delete on a card removes a campaign you've abandoned, folder and all, after a second click to confirm (`solo delete <dir>` from a terminal).
 
@@ -130,7 +132,7 @@ oma-solorpg is a third-party supplement for Dragonbane, published as a virtual t
 The license lets a supplement use Dragonbane's terminology and refer to its pages, and it does not let a supplement carry a copy of the rules. So this repository ships the words and none of the rules:
 
 - `packs/dragonbane` holds the game's names (attributes, conditions, skills, what HP and WP are called), a list of hero names per kin, and the text portraits. Its `needs` list says what a campaign can't start without, and the engine refuses to start one on Dragonbane until your own packs supply it.
-- The numbers, tables and procedures come from your book. `make rules` builds them into `~/Games/solo/systems/dragonbane-rulebook` (the core rules) and `~/Games/solo/systems/dragonbane` over it (the solo rules, if you have that book), with a pack per further book (`make supplement`) listed under its `extends`. Campaigns use the top one.
+- The numbers, tables and procedures come from your books. `make dragonbane` builds them into `~/Games/solo/systems/dragonbane-rulebook` (the core rules), a pack for each further book laid over it (the Book of Magic, the card decks) and `~/Games/solo/systems/dragonbane` on top of them (the solo rules), each listed under the `extends` of the one above. Campaigns use the top one.
 - The Red Tusk Hall and Ragna are this project's own, written for Dragonbane.
 - The tests run on made-up rules (`tests/fixtures/house`) in the same shapes, so they need no book either.
 
@@ -141,7 +143,7 @@ With the solo rules built, the engine runs Dragonbane alone the way Alone in Dee
 Your adventures, your packs and your campaigns live in `~/Games/solo` (set `SOLO_HOME` to move it), outside this folder:
 
 ```
-~/Games/solo/systems/<id>/      rules packs built from books you own (make rules)
+~/Games/solo/systems/<id>/      rules packs built from books you own (make dragonbane)
 ~/Games/solo/adventures/<id>/   adventures you imported or generated; they show up on the New adventure screen
 ~/Games/solo/sources/<id>/      your books as text, page by page (solo extract)
 ~/Games/solo/campaigns/<id>/    created by New adventure or solo new
@@ -217,7 +219,7 @@ Don't publish packs built from books you bought. They stay in `~/Games/solo`, wh
 | `solo recall <words>` / `history` | the GM's long memory: search everything said and written down, or the whole story in order |
 | `solo state` / `log` / `rebuild` / `validate` / `outline` | inspection, repair and review |
 | `solo new [<adventure>]` / `character` / `library` / `use` / `play [--terminal]` | campaigns and heroes |
-| `solo setup` / `import` / `extract <pdf>` / `inventory` / `audit` | installation and content: a book's PDF as text, a first inventory, a table from the book, Ironsworn from Datasworn, a pack checked against its inventory and its pages |
+| `solo setup` / `import` / `extract <pdf>` / `inventory` / `audit` / `compare` | installation and content: a book's PDF as text, a pack built from a book (`import book`), a first inventory, a table from the book, Ironsworn from Datasworn, a pack checked against its inventory and its pages, two packs side by side |
 | `solo campaign new\|next\|roll\|check` | a campaign from a premise: roll it, roll its next mission from what the hero did, roll for its author, check it's written and every roll is used |
 
 ## Development

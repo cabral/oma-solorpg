@@ -1,0 +1,6 @@
+name = "Gale"
+school = "elementalism"
+rank = 1
+casting_time = "reaction"
+range = 10
+duration = "instant"

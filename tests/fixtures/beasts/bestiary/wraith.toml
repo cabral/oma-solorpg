@@ -1,0 +1,8 @@
+name = "Wraith"
+role = "A made-up ghost that blades pass through"
+attacks = "leech_attacks"
+
+[stats]
+hp = 20
+armor = 0
+immune_to = ["physical"]

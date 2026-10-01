@@ -1,0 +1,7 @@
+name = "Charm"
+school = "elementalism"
+rank = 2
+prerequisite = ["elementalism"]
+casting_time = "action"
+range = 10
+duration = "stretch"

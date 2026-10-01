@@ -1,0 +1,10 @@
+# The made-up test rules with a made-up monster or two laid over them, for the tests of what monsters
+# do. Kept apart so that a new creature doesn't shift the rolls of every test that picks from the
+# house bestiary.
+format = 1
+extends = "../house"
+
+# Made up: a monster never repeats an attack, and defends at 12.
+[combat]
+monster_repeat = "next"
+monster_defense = 12

@@ -1,0 +1,9 @@
+name = "Leech swarm"
+role = "A made-up swarm that feeds on what it bites"
+attacks = "leech_attacks"
+
+[stats]
+hp = 12
+armor = 0
+drain = true
+resist = ["physical"]

@@ -9,6 +9,8 @@ You are compiling a book the user owns into data and pages. The engine runs the 
 
 Read `docs/INGESTION.md` (how books became packs before, and what went wrong) and `docs/PACK_FORMAT.md` (every key) before you start. The adventure side is the `solo-import` skill.
 
+**Try the importers first.** Dragonbane's core rules, the Book of Magic, the three card decks and the solo booklet have importers (`solo import book <pdf or folder of PDFs>`, or `make dragonbane BOOKS=<folder>`): deterministic, no agent, audited against the pages. Use this skill for a printing they refuse (they say which section they couldn't find), for a book they don't know, and to fill a gap an importer reports; never write by hand what an importer already writes, and when you correct an importer's pack, change the importer (`solo/books/`, with a test) rather than the pack, or the next import loses your correction.
+
 ## Before you start: settle with the user
 
 1. Which book, and where the PDF is. The PDF never goes through the chat.

@@ -9,6 +9,8 @@ and page by page it can be cited. This writes, into a folder outside the reposit
   pages/0042.txt     one page
   chapters/03-combat.md   one top-level chapter's pages, with the same markers
   tables/            tables found on a page: p0042-1.md as Markdown, p0042.png as a picture
+  layout/0042.json   the page's lines with their place and style, and outline.json the bookmarks
+                     with where each points (solo/layout.py): what the importers in solo/books/ read
 
 Page numbers are the PDF's (1 is the first page of the file); the printed number is kept
 in manifest.json when it differs, and in the page markers. The inventory cites PDF pages.
@@ -25,9 +27,9 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-from . import SoloError, library, packs
+from . import SoloError, layout, library, packs
 
-GENERATED = ("pages", "chapters", "tables")
+GENERATED = ("pages", "chapters", "tables", "layout")
 # A page with less text than this and a picture on it is a scan: its text needs OCR.
 SCANNED_BELOW = 30
 # A roll table in an RPG is lines that start with a die result: "1", "2-5", "11–16".
@@ -79,6 +81,7 @@ def extract(pdf, out=None, *, tables=True):
             entry["scanned"] = True
         pages.append(entry)
         (out / "pages" / f"{number:0{width}d}.txt").write_text(text, encoding="utf-8")
+        _write_json(out / "layout" / f"{number:0{width}d}.json", layout.page_layout(page, number, set(running), running_form))
         if tables:
             found += _tables(page, number, text, out / "tables", width)
 
@@ -88,6 +91,7 @@ def extract(pdf, out=None, *, tables=True):
     toc, toc_from = _toc(doc, pages)
     chapters = _chapters(toc, texts, markers, out / "chapters")
     (out / "toc.json").write_text(json.dumps(toc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    _write_json(out / "outline.json", layout.outline(doc))
     if tables:
         (out / "tables" / "index.json").write_text(json.dumps(found, indent=2) + "\n", encoding="utf-8")
 
@@ -100,6 +104,7 @@ def extract(pdf, out=None, *, tables=True):
         "toc_from": toc_from,
         "chapters": chapters,
         "tables": len(found) if tables else None,
+        "layout": True,
         "scanned": [p["page"] for p in pages if p.get("scanned")],
         "labels": {str(p["page"]): p["label"] for p in pages if "label" in p},
         # Where the printed numbers came from: the PDF's page labels, the footers, or nowhere.
@@ -109,6 +114,10 @@ def extract(pdf, out=None, *, tables=True):
     }
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return out, manifest
+
+
+def _write_json(path, data):
+    path.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
 
 
 def _pymupdf():
@@ -151,26 +160,7 @@ def _sha256(path):
 
 def page_text(page):
     blocks = [b for b in page.get_text("blocks") if b[6] == 0 and b[4].strip()]
-    if not blocks:
-        return ""
-    left, right = page.rect.x0, page.rect.x1
-    middle = (left + right) / 2
-    ordered, band = [], []
-
-    def flush():
-        band.sort(key=lambda b: (b[0] >= middle, b[1], b[0]))
-        ordered.extend(band)
-        band.clear()
-
-    for block in sorted(blocks, key=lambda b: (b[1], b[0])):
-        x0, _, x1 = block[0], block[1], block[2]
-        if x0 < middle - 10 and x1 > middle + 10:  # crosses the gutter: spans the page
-            flush()
-            ordered.append(block)
-        else:
-            band.append(block)
-    flush()
-    return "\n".join(_clean(b[4]) for b in ordered) + "\n"
+    return "\n".join(_clean(block[4]) for block, _ in layout.reading_order(blocks, page.rect)) + "\n" if blocks else ""
 
 
 def _clean(text):
@@ -186,18 +176,24 @@ def _clean(text):
 # sentences apart. A line near the top or bottom that comes back on several pages (digits
 # counted as one) is taken out; the number in it, where there is one, is the printed page.
 # Only if it is at the edge nearly everywhere it appears, though: on a two-column page a
-# spell's "Rank: 1" or a table's "D6" can come out first, and those are the book's text.
+# spell's "Rank: 1" or a table's "D6" can come out first, and those are the book's text. And
+# a line with a number in it is a heading only if the same line comes back, or the number is
+# the page's: the cards of a deck that differ in the dice they show ("2D6 silver coins",
+# "3D6 silver coins") are one card each, not a heading.
 
 _EDGE = 2
 _AT_EDGE = 0.9
+_CARD_LINES = 8
 _NUMBER = re.compile(r"^\D*?(\d{1,4})\D*$")
+
+
+def running_form(line):
+    return re.sub(r"\d+", "#", " ".join(line.lower().split()))
 
 
 def strip_running(texts):
     """({page: text without running heads}, [the forms taken out], {page: printed number})."""
-    def form(line):
-        return re.sub(r"\d+", "#", " ".join(line.lower().split()))
-
+    form = running_form
     edges, anywhere = {}, Counter()
     for number, text in texts.items():
         lines = [line for line in text.splitlines() if line.strip()]
@@ -205,8 +201,13 @@ def strip_running(texts):
         anywhere.update({form(line) for line in lines})
     seen = Counter(f for lines in edges.values() for f in {form(line) for line in lines})
     with_text = sum(1 for text in texts.values() if text.strip())
+    often = max(3, with_text // 20)
+    # A deck of cards has a few lines to a page, so every line is at an edge: only what is on half the pages is the frame's.
+    lengths = sorted(len([line for line in text.splitlines() if line.strip()]) for text in texts.values() if text.strip())
+    if lengths and lengths[len(lengths) // 2] <= _CARD_LINES:
+        often = max(often, with_text // 2)
     running = {f for f, count in seen.items()
-               if count >= max(3, with_text // 20) and count >= _AT_EDGE * anywhere[f] and len(f) <= 80}
+               if count >= often and count >= _AT_EDGE * anywhere[f] and len(f) <= 80 and _heading(f, edges, often)}
     cleaned, printed = {}, {}
     for number, text in texts.items():
         lines = text.splitlines()
@@ -222,6 +223,19 @@ def strip_running(texts):
                 keep.append(line)
         cleaned[number] = "\n".join(keep).strip() + "\n" if any(line.strip() for line in keep) else ""
     return cleaned, sorted(running), _agreed(printed, max(texts, default=0))
+
+
+def _heading(f, edges, often):
+    """Whether the lines of this form are a heading: no number in them, or one line that comes back as it is on enough pages, or a number that is
+    the page's (the same distance from the PDF's page number on most pages that have it)."""
+    if "#" not in f:
+        return True
+    pages = {number: [line for line in lines if running_form(line) == f] for number, lines in edges.items()}
+    exact = Counter(" ".join(line.lower().split()) for lines in pages.values() for line in set(lines))
+    if exact and max(exact.values()) >= often:
+        return True
+    offsets = Counter(number - int(digits) for number, lines in pages.items() for line in lines[:1] for digits in re.findall(r"\d+", line))
+    return bool(offsets) and offsets.most_common(1)[0][1] >= 0.6 * sum(1 for lines in pages.values() if lines)
 
 
 def _agreed(numbers, total):

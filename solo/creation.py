@@ -62,7 +62,7 @@ def build(system, picks=(), rng=None):
     recipe = system["creation"]
     choose = recipe.get("choose", {})
     if not choose and not recipe.get("attributes"):
-        raise SoloError(f"{system['name']} has no creation tables yet: they come from your book (`make rules BOOK=<your PDF>`). "
+        raise SoloError(f"{system['name']} has no creation tables yet: they come from your books (`make dragonbane BOOKS=<folder of your PDFs>`). "
                         "Until then, pick a pre-made hero or a character file")
     rng = rng or random.SystemRandom()
     wanted = _match(choose, picks)
@@ -84,20 +84,51 @@ def build(system, picks=(), rng=None):
         kit = kits[rng.randint(0, len(kits) - 1)] if kits else []
         items += [_ROLL_IN_TEXT.sub(lambda m: str(dice.roll(m.group(1), rng)["total"]), text) for text in kit + option.get("gear", [])]
     skills = _skills(system, attributes, options, rng)
+    abilities = [ability for o in options for ability in o.get("abilities", [])] + _extra_abilities(system, recipe, options, rng)
     # An option's own names, else the pack's list for it ([names] in creation.toml, by option id).
     lists = [o.get("names") or recipe.get("names", {}).get(oid) for _, oid, o in chosen]
     names = next((n for n in lists if n), None) or recipe.get("names", {}).get("any") or ["The hero"]
-    return {
+    sheet = {
         "name": names[rng.randint(0, len(names) - 1)],
         "info": {table_id: _label(option_id, option) for table_id, option_id, option in chosen},
         "attributes": attributes,
         "skills": skills,
-        # A track starts at an attribute's value (Dragonbane's HP is CON) or at a number (Ironsworn's health is 5).
-        "tracks": {track: attributes[start] if isinstance(start, str) else start for track, start in recipe.get("tracks", {}).items()},
-        "abilities": [ability for o in options for ability in o.get("abilities", [])] + _extra_abilities(system, recipe, options, rng),
+        # A track starts at an attribute's value (Dragonbane's HP is CON) or at a number (Ironsworn's health is 5),
+        # and a heroic ability the hero starts with may raise it (Robust).
+        "tracks": _raised(system, {track: attributes[start] if isinstance(start, str) else start for track, start in recipe.get("tracks", {}).items()}, abilities),
+        "abilities": abilities,
         "ratings": _ratings(recipe, attributes, options),
         "items": items,
     }
+    known, ready = _spells(system, options, attributes, rng)
+    return {**sheet, **({"spells": known, "prepared": ready} if known else {})}
+
+
+def _spells(system, options, attributes, rng):
+    """(the spells a new mage knows, the ones held ready): a mage chooses so many spells of a rank and so many magic tricks (`spells = { count, rank, tricks }` on
+    the profession), from their school and general magic. Picked last, so a seed never changes the rest of the hero; the spells are held ready as far as the
+    hero can."""
+    pick = next((o["spells"] for o in options if o.get("spells")), None)
+    school = next((slug(o["always"][0]) for o in options if o.get("always")), None)
+    if not (pick and school and system.get("spells")):
+        return [], []
+    own = {school, "general"}
+    pool = lambda trick: [spell.get("name", sid) for sid, spell in system["spells"].items()
+                          if spell.get("school") in own and bool(spell.get("trick")) == trick and (trick or spell.get("rank") == pick.get("rank", 1))]
+    learned = _sample(pool(False), int(pick.get("count", 0)), rng)
+    tricks = _sample(pool(True), int(pick.get("tricks", 0)), rng)
+    limit = packs.base_chance(system, attributes.get(system.get("magic", {}).get("prepared", "int"), 0))
+    return learned + tricks, learned[:limit]
+
+
+def _raised(system, tracks, abilities):
+    """The tracks with what the abilities the hero starts with add to them (an ability that can be taken
+    again counts each time)."""
+    for name in abilities:
+        spec = next((spec for aid, spec in system.get("abilities", {}).items() if slug(name) in (aid, slug(spec.get("name", aid)))), {})
+        for track, more in (spec.get("max") or {}).items():
+            tracks[track] = tracks.get(track, 0) + int(more)
+    return tracks
 
 
 def _attributes(system, recipe, rng):

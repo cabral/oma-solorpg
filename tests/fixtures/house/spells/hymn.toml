@@ -1,0 +1,7 @@
+name = "Hymn"
+school = "chanting"
+rank = 1
+prerequisite = ["chanting"]
+casting_time = "action"
+range = 10
+duration = "instant"

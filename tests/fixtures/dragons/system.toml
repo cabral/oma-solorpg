@@ -1,0 +1,9 @@
+# The made-up test rules where a Dragon on an attack is the player's choice, a Dragon on a parry strikes
+# back and a Demon on an attack brings a mishap.
+format = 1
+extends = "../house"
+
+[combat]
+dragon = "choice"
+parry_dragon = "counter"
+demon = { melee = "demon_melee", ranged = "demon_ranged" }

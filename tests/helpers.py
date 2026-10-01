@@ -16,8 +16,16 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 # from the book is laid over it in play.
 BUNDLED = ROOT / "packs" / "dragonbane"
 DRAGONBANE = FIXTURES / "house"
+# The same, with a made-up monster or two (their attacks, what they resist) over it.
+BEASTS = FIXTURES / "beasts"
+# The same, where a Dragon on an attack is the player's choice and a Demon brings a mishap.
+DRAGONS = FIXTURES / "dragons"
+# The same, where a threat advances once for each activity of a stretch or more.
+ACTIVITY = FIXTURES / "activity"
 RED_TUSK = ROOT / "examples" / "red-tusk"
 RAGNA = FIXTURES / "ragna.toml"
+# A made-up mage, for the tests of magic.
+MAGE = FIXTURES / "mage.toml"
 # Ironsworn is the one bundled game with its rules in the repository (CC BY, see NOTICE.md), so
 # the tests for its engine family play on the pack itself, on a small made-up adventure.
 IRONSWORN = ROOT / "packs" / "ironsworn"

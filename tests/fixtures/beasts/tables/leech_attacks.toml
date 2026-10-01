@@ -1,0 +1,5 @@
+name = "Leech attacks"
+formula = "1d6"
+results = [
+  { range = [1, 6], text = "They latch on.", damage = "1d6" },
+]

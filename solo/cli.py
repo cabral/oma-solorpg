@@ -13,7 +13,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from . import SoloError, audit, booktables, campaign, creation, datasworn, desk, dice, extract, foundry, generate, gm, library, mechanics, oracle, packs, report, review
+from . import SoloError, audit, booktables, books, campaign, combat, compare, creation, datasworn, desk, dice, extract, foundry, generate, gm, library, mechanics, oracle, packs, report, review
 from .library import REPO
 from .packs import ATTITUDES
 
@@ -26,7 +26,7 @@ AGENT_SKILL_DIRS = (".claude/skills", ".agents/skills", ".codex/skills", ".pi/ag
 GM_COMMANDS = (
     "scene", "npc", "rule", "state", "log", "rebuild", "validate", "resume", "recall", "history",
     "check", "push", "act", "burn", "track", "rest", "roll", "table", "ask", "move", "commit", "say",
-    "fight", "attack", "enemy", "ally", "wound", "defend", "death-roll", "rally", "hero", "threat", "search", "scavenge", "mark", "advance", "voice", "light",
+    "fight", "attack", "enemy", "ally", "wound", "defend", "dragon", "repair", "ability", "journey", "camp", "cast", "prepare", "learn", "death-roll", "rally", "hero", "threat", "search", "scavenge", "mark", "advance", "voice", "light",
 )
 # `solo prefs` is left out on purpose: the player's lines and veils are theirs to change.
 PLAY_PROMPT = (
@@ -519,6 +519,12 @@ def cmd_audit(args):
         raise SoloError(f"{path.name}: something is unaccounted for (above)")
 
 
+def cmd_compare(args):
+    """Two system packs side by side."""
+    first, second = (library.find_system(name) if not Path(name).expanduser().is_dir() else Path(name).expanduser() for name in (args.first, args.second))
+    print(compare.render(compare.compare(first, second), (first.name, second.name), 0 if args.all else 8), end="")
+
+
 def cmd_outline(args):
     """The adventure's shape for its author: GM-only, spoilers and all."""
     if args.adventure:
@@ -598,7 +604,7 @@ def cmd_push(args):
 
 def cmd_rest(args):
     with _open(args) as c:
-        _report(c, c.rest(args.kind, heal=args.heal, rng=_rng(), tend=args.tend))
+        _report(c, c.rest(args.kind, heal=args.heal, rng=_rng(), tend=args.tend, use=args.use))
 
 
 def cmd_roll(args):
@@ -626,7 +632,7 @@ def cmd_fight(args):
         if args.end:
             _report(c, c.end_fight())
         elif args.round:
-            _report(c, c.next_round(rng=_rng()))
+            _report(c, c.next_round(rng=_rng(), use=args.use))
         elif args.join:
             _report(c, c.join(args.foes, rng=_rng()))
         else:
@@ -635,7 +641,7 @@ def cmd_fight(args):
 
 def cmd_attack(args):
     with _open(args) as c:
-        _report(c, c.attack(args.target, args.weapon, args.boons, args.banes, rng=_rng()))
+        _report(c, c.attack(args.target, args.weapon, args.boons, args.banes, distance=args.range, defended=args.defended, kind=args.type, use=args.use, rng=_rng()))
 
 
 def cmd_enemy(args):
@@ -653,7 +659,7 @@ def cmd_ally(args):
 
 def cmd_wound(args):
     with _open(args) as c:
-        _report(c, c.wound(args.foe, args.amount, args.why, armor=not args.through_armor, double=args.double, rng=_rng()))
+        _report(c, c.wound(args.foe, args.amount, args.why, armor=not args.through_armor, double=args.double, kind=args.kind, rng=_rng()))
 
 
 def cmd_hero(args):
@@ -687,7 +693,49 @@ def cmd_scavenge(args):
 
 def cmd_defend(args):
     with _open(args) as c:
-        _report(c, c.defend(args.how, args.weapon, rng=_rng()))
+        _report(c, c.defend(args.how, args.weapon, rng=_rng(), use=args.use))
+
+
+def cmd_journey(args):
+    with _open(args) as c:
+        event = c.journey(args.km, mounted=args.mounted, road=args.road, difficult=args.difficult, use=args.use, rng=_rng())
+        _report(c, event)
+
+
+def cmd_camp(args):
+    with _open(args) as c:
+        _report(c, c.camp(rng=_rng()))
+
+
+def cmd_cast(args):
+    with _open(args) as c:
+        _report(c, c.cast(" ".join(args.spell), power=args.power, targets=args.target, boons=args.boons, banes=args.banes, body=args.body,
+                          grimoire=args.grimoire, school=args.school, defended=args.defended, rng=_rng()))
+
+
+def cmd_prepare(args):
+    with _open(args) as c:
+        _report(c, c.prepare(" ".join(args.spell), drop=args.drop))
+
+
+def cmd_learn(args):
+    with _open(args) as c:
+        _report(c, c.learn(" ".join(args.spell), source=args.source, rng=_rng()))
+
+
+def cmd_ability(args):
+    with _open(args) as c:
+        _report(c, c.use(" ".join(args.name), cost=args.cost))
+
+
+def cmd_dragon(args):
+    with _open(args) as c:
+        _report(c, c.dragon(args.choice, args.foe, rng=_rng()))
+
+
+def cmd_repair(args):
+    with _open(args) as c:
+        _report(c, c.repair(args.weapon, rng=_rng(), artisan=args.artisan))
 
 
 def cmd_death_roll(args):
@@ -925,6 +973,8 @@ def cmd_import(args):
         print("left out (not under CC BY, or not read): " + "; ".join(f"{kind} {what}" for kind, what in report["left_out"].items()))
         print("the yes/no odds its ask-the-oracle tables give (system.toml's [oracle] odds): " + ", ".join(f"{level} {chance}" for level, chance in report["odds"].items()))
         print("\n".join(f"note: {note}" for note in report["notes"]))
+    elif args.source == "book":
+        _import_book(args)
     elif args.source == "table":
         text = sys.stdin.read() if args.file == "-" else Path(args.file).expanduser().read_text(encoding="utf-8")
         path, problems = booktables.write(text, Path(args.out).expanduser(), name=args.name, formula=args.formula, source=args.pages and f"p. {args.pages}")
@@ -939,6 +989,40 @@ def cmd_import(args):
         else:
             written = foundry.import_character(args.paths, args.out, system=packs.load_system(library.find_system(args.system)))
         print(f"wrote {written}")
+
+
+def _import_book(args):
+    """The packs of the books some importer knows, built and audited against the books' own pages: one book, or every PDF in a folder (in the order the packs go on
+    one another)."""
+    path = Path(args.path).expanduser()
+    many = path.is_dir() and not (path / "manifest.json").exists()
+    if many and args.out:
+        raise SoloError("--out is the folder of one pack: point at one PDF, or give --systems for the folder of all of them")
+    folders = []
+    for source in (sorted(path.glob("*.pdf")) if many else [path]):
+        if source.is_dir():
+            folders.append(source)
+        else:
+            folder, manifest = extract.extract(source, None if many else args.sources, tables=False)
+            print(f"read {manifest['pages']} pages of {source.name} into {folder}")
+            folders.append(folder)
+    known, unknown = books.plan(folders)
+    failed = []
+    for folder, recipe in known:
+        target = Path(args.out).expanduser() if args.out else (Path(args.systems).expanduser() if args.systems else library.home() / "systems") / recipe.PACK
+        target, written, notes = books.build(folder, target, args.replace)
+        print(f"\n{recipe.NAME}: built {len(written)} files in {target}")
+        print("\n".join(f"  note: {note}" for note in notes))
+        report = audit.audit(target, "system")
+        print(f"  audit: {report['counts']['mapped']} items mapped, {len(report['unclaimed'])} unclaimed, {len(report['problems'])} problems, "
+              f"{len(report['unverified'])} unverified, {len((report['pages'] or {}).get('uncited', []))} pages uncited")
+        if audit.failed(report):
+            print(audit.render(report), end="")
+            failed.append(target.name)
+    for folder in unknown:
+        print(f"\nno importer knows {Path(folder).name}: an agent with the solo-rules-import or solo-import skill can read it (make adventure, make supplement)")
+    if failed:
+        raise SoloError(f"{', '.join(failed)}: the pack and the book's pages disagree (above)")
 
 
 # Rendering ------------------------------------------------------------------------------
@@ -991,7 +1075,9 @@ def scene_digest(c):
     lines += _progress_lines(state)
     chaos = [] if c.system.get("oracle", {}).get("chart") in ("fortune", "odds") else [f"Chaos factor: {state['chaos']}"]
     story = _hero_story(state)
-    lines += ["## Character", _pc_line(state), _skills_line(state), *(["Their story (hero.* facts): " + "; ".join(story)] if story else []), *chaos, ""]
+    load = combat.encumbrance(c.system, state["pc"])
+    lines += ["## Character", _pc_line(state), *([f"Load: {load['carried']:g} of {load['capacity']}" + ("; OVER-ENCUMBERED (solo rule encumbrance)" if load["over"] else "")] if load else []),
+              _skills_line(state), *(["Their story (hero.* facts): " + "; ".join(story)] if story else []), *chaos, ""]
     nudge = _chronicle_nudge(c)
     if nudge:
         lines += ["## Your chronicle", nudge, ""]
@@ -1674,6 +1760,10 @@ def _parser():
     sub.add_argument("--system", help="system pack folder")
     sub.add_argument("--adventure", help="adventure pack folder")
 
+    sub = command("compare", cmd_compare, "two system packs side by side: a pack built from a book against one an agent wrote (Markdown)")
+    sub.add_argument("first", help="a system pack folder or name")
+    sub.add_argument("second", help="the one to compare it to")
+    sub.add_argument("--all", action="store_true", help="every difference, not the first few of each area")
     sub = command("audit", cmd_audit, "a pack against its inventory.toml and the book's pages (Markdown)")
     group = sub.add_mutually_exclusive_group()
     group.add_argument("--system", help="system pack name or folder (default: the only one)")
@@ -1708,6 +1798,7 @@ def _parser():
     sub.add_argument("kind", help="a rest from the system pack: round, stretch, shift")
     sub.add_argument("--heal", help="the condition to heal first")
     sub.add_argument("--tend", action="store_true", help="the hero tends their own wounds: a HEALING roll for more HP (solo rules)")
+    sub.add_argument("--use", action="append", default=[], metavar="ABILITY", help="a heroic ability this uses (paid in WP): Fast Healer, on a stretch rest")
     sub = command("roll", cmd_roll, "roll a dice expression: 2d20kl, 5d6cs>=6, d66, 1d6+@stress")
     sub.add_argument("expr")
     sub.add_argument("--reason")
@@ -1728,11 +1819,16 @@ def _parser():
     group.add_argument("--join", action="store_true", help="these foes enter the fight under way")
     group.add_argument("--round", action="store_true", help="next round: new initiative cards")
     group.add_argument("--end", action="store_true", help="the fight is over")
+    sub.add_argument("--use", action="append", default=[], metavar="ABILITY", help="a heroic ability this uses (paid in WP): --round: Lightning Fast, Veteran")
     sub = command("attack", cmd_attack, "the hero attacks a foe with a carried weapon")
     sub.add_argument("target", nargs="?", help="the foe (default: the only one standing)")
     sub.add_argument("--with", dest="weapon", help="the weapon (default: the first carried)")
     sub.add_argument("--boons", type=int, default=0)
     sub.add_argument("--banes", type=int, default=0)
+    sub.add_argument("--use", action="append", default=[], metavar="ABILITY", help="a heroic ability this uses (paid in WP): Dragonslayer, Massive Blow, Iron Fist")
+    sub.add_argument("--defended", choices=["dodge", "parry"], help="the foe dodges or parries the blow, which costs it one of its actions")
+    sub.add_argument("--type", choices=["slashing", "piercing", "bludgeoning"], help="the damage a weapon that cuts and stabs does")
+    sub.add_argument("--range", type=int, metavar="METERS", help="how far the foe is: a shot too near or too far gets a bane, a blow out of reach is refused")
     command("enemy", cmd_enemy, "a foe attacks the hero").add_argument("foe", nargs="?", help="the foe (default: the only one standing)")
     sub = command("ally", cmd_ally, "an NPC on the hero's side attacks a foe, once a round")
     sub.add_argument("npc", help="the ally: orc_leader")
@@ -1743,6 +1839,7 @@ def _parser():
     sub.add_argument("--why", required=True, help="what does the harm, in the story's words")
     sub.add_argument("--through-armor", action="store_true", help="armor doesn't help (fire, a hand through the chest)")
     sub.add_argument("--double", action="store_true", help="double damage (a weakness the adventure names: fire against a wooden foe)")
+    sub.add_argument("--kind", help="the kind of damage, for a foe that resists or is immune to it: fire, magic, slashing, piercing, bludgeoning")
     sub = command("threat", cmd_threat, "a looming danger on a D6 counter: add <what happens>, random, advance <id> [--by 2], end <id>")
     sub.add_argument("action", choices=["add", "random", "advance", "end"])
     sub.add_argument("words", nargs="*", help="add: what happens when it triggers; advance, end: the threat's id (default: the only one)")
@@ -1756,6 +1853,39 @@ def _parser():
     sub = command("defend", cmd_defend, "answer an incoming hit: evade, parry or take")
     sub.add_argument("how", choices=["evade", "parry", "resist", "take"])
     sub.add_argument("--with", dest="weapon", help="parry: the weapon (default: the first that can); resist: the attribute or skill (wil)")
+    sub.add_argument("--use", action="append", default=[], metavar="ABILITY", help="a heroic ability this uses (paid in WP): Defensive, Fast Footwork, Shield Block")
+    sub = command("journey", cmd_journey, "travel a number of kilometers a shift at a time, until the hero arrives or something needs the GM")
+    sub.add_argument("km", type=int)
+    sub.add_argument("--mounted", action="store_true", help="on horseback: twice as far a shift")
+    sub.add_argument("--road", action="store_true", help="along a road or a clear path: nobody gets lost, so no roll")
+    sub.add_argument("--difficult", action="store_true", help="difficult terrain: a bane on the pathfinder's roll")
+    sub.add_argument("--use", action="append", default=[], metavar="ABILITY", help="a heroic ability that helps the pathfinder (Pathfinder)")
+    command("camp", cmd_camp, "find a place to rest in the wild: the roll that decides whether the shift can be a rest")
+    sub = command("cast", cmd_cast, "cast a spell the hero knows: pay its WP, roll the school, and do what it does")
+    sub.add_argument("spell", nargs="+")
+    sub.add_argument("--power", type=int, default=1, help="the power level, 1 to 3: each costs the same again")
+    sub.add_argument("--target", action="append", default=[], help="the foe a damage spell is for (repeat for the ones it goes on to)")
+    sub.add_argument("--boons", type=int, default=0)
+    sub.add_argument("--banes", type=int, default=0)
+    sub.add_argument("--body", help="draw power from the body (d6): that many WP at once, and as much harm")
+    sub.add_argument("--grimoire", action="store_true", help="cast a spell that isn't prepared, from the grimoire (twice as long)")
+    sub.add_argument("--school", help="a general spell: the school to cast it with (default: the hero's best)")
+    sub.add_argument("--defended", choices=["dodge", "parry"], help="how a foe avoids a spell that can be avoided")
+    sub = command("prepare", cmd_prepare, "hold a spell ready (as many as the rules allow; --drop another to make room)")
+    sub.add_argument("spell", nargs="+")
+    sub.add_argument("--drop", help="the prepared spell to put aside")
+    sub = command("learn", cmd_learn, "learn a spell, from a teacher or a grimoire (a school mark, and a roll)")
+    sub.add_argument("spell", nargs="+")
+    sub.add_argument("--from", dest="source", default="teacher", help="teacher (default) or grimoire")
+    sub = command("ability", cmd_ability, "pay for a heroic ability and log it, for one the GM runs from its rule page")
+    sub.add_argument("name", nargs="+", help="the ability: Fearless")
+    sub.add_argument("--cost", type=int, help="what an ability that costs what the hero chooses to spend costs")
+    sub = command("dragon", cmd_dragon, "a Dragon on the hero's attack: choose double, attack (a free one on another foe) or pierce")
+    sub.add_argument("choice")
+    sub.add_argument("foe", nargs="?", help="attack: the other foe")
+    sub = command("repair", cmd_repair, "mend a weapon that broke or was damaged: a CRAFTING roll, or --artisan")
+    sub.add_argument("weapon")
+    sub.add_argument("--artisan", action="store_true", help="an artisan sees to it: no roll")
     sub = command("death-roll", cmd_death_roll, "the dying hero's roll against death (or --heal: try to save their own life)")
     sub.add_argument("--heal", action="store_true", help="instead, a HEALING roll to save their own life (solo rules)")
     command("rally", cmd_rally, "the dying hero rallies themselves to act again, still dying (solo rules)")
@@ -1810,6 +1940,12 @@ def _parser():
     sub.add_argument("--out", required=True, help="adventure folder, system pack folder, or character file")
     sub.add_argument("--journal", help="adventure: only this journal (name or id)")
     sub.add_argument("--system", default="dragonbane", help="character: system pack to map onto (name or folder)")
+    sub = sources.add_parser("book", help="a book's pack, built from its bookmarks and layout by the importer that knows it (the core rules, ...)")
+    sub.add_argument("path", help="the book's PDF (extracted first, needs PyMuPDF), the folder solo extract left, or a folder of PDFs: every one an importer knows")
+    sub.add_argument("--out", help="the system pack folder to build, for one book (default: the importer's own, in ~/Games/solo/systems)")
+    sub.add_argument("--systems", help="the folder the packs are built in (default ~/Games/solo/systems); to compare with packs you have, build in another and use solo compare")
+    sub.add_argument("--sources", help="where the PDF is extracted to (default: ~/Games/solo/sources/<book>)")
+    sub.add_argument("--replace", action="store_true", help="build over a pack this made before (never one made any other way)")
     sub = sources.add_parser("table", help="a roll table from solo extract's Markdown (tables/p0042-1.md) or pasted lines (-)")
     sub.add_argument("file", help="the table as Markdown rows or roll lines (\"1-2 Frozen in place\"), or - to read stdin")
     sub.add_argument("--out", required=True, help="the pack's tables/<id>.toml to write")

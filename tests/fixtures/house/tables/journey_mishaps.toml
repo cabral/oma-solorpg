@@ -1,0 +1,8 @@
+name = "Journey mishaps"
+formula = "1d6"
+results = [
+  { range = [1, 1], text = "Fog: half the ground is lost.", effect = { distance = "half" } },
+  { range = [2, 2], text = "Lost: no progress this shift.", effect = { distance = "none" } },
+  { range = [3, 3], text = "A beast attacks: the GM runs it.", effect = { gm = true } },
+  { range = [4, 6], text = "Torn clothes." },
+]

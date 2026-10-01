@@ -1,0 +1,7 @@
+# The made-up test rules where a threat moves once for each activity of a stretch or more, not once
+# for every stretch that passes.
+format = 1
+extends = "../house"
+
+[threats]
+advance = ["activity"]

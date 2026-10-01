@@ -1,0 +1,12 @@
+name = "Ember"
+school = "elementalism"
+rank = 1
+prerequisite = ["elementalism"]
+requirement = ["word", "gesture"]
+casting_time = "action"
+range = 20
+duration = "instant"
+damage = "2d4"
+per_level = { dice = 1 }
+avoid = ["dodge", "parry"]
+kind = "fire"

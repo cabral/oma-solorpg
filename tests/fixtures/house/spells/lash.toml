@@ -1,0 +1,12 @@
+name = "Lash"
+school = "elementalism"
+rank = 2
+prerequisite = ["ember"]
+casting_time = "action"
+range = 30
+duration = "instant"
+damage = "2d8"
+chain = ["2d6"]
+per_level = { dice = 1 }
+avoid = ["dodge"]
+armor = false

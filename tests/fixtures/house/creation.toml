@@ -67,6 +67,7 @@ gear = ["Torch", "{1d4} field rations", "{1d6} silver"]
 range = [3, 3]
 key = "wil"
 then = "school"
+spells = { count = 2, rank = 1, tricks = 1 }
 kits = [["Staff"], ["Dagger", "Candle stub"]]
 gear = ["Spellbook", "Torch", "{1d4} field rations", "{1d6} silver"]
 

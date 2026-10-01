@@ -1,0 +1,7 @@
+name = "Thornback"
+role = "A made-up beast for the tests"
+attacks = "thornback_attacks"
+
+[stats]
+hp = 20
+armor = 2

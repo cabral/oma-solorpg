@@ -265,7 +265,7 @@ class CliTest(CliCase):
     def test_the_bundled_names_alone_send_the_player_to_their_book(self):
         code, _, err = self.solo("validate", "--system", str(BUNDLED))
         self.assertEqual(code, 1)
-        self.assertIn("make rules BOOK=<your PDF>", err)
+        self.assertIn("make dragonbane BOOKS=<folder of your PDFs>", err)
         self.assertIn("Missing: time, push, rest", err)
         os.environ["SOLO_HOME"] = str(self.tmp / "empty")
         code, _, err = self.solo("new", str(RED_TUSK), "--dir", self.game, "--character", "ragna")

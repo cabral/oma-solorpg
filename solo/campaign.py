@@ -16,7 +16,7 @@ from datetime import datetime
 from difflib import get_close_matches
 from pathlib import Path
 
-from . import SoloError, combat, creation, dice, library, mechanics, oracle, packs, portrait
+from . import SoloError, combat, creation, dice, library, magic, mechanics, oracle, packs, portrait
 from .packs import ATTITUDES, FATES, PROMISE_STATUSES, slug
 
 LIKELIHOOD = {
@@ -201,6 +201,9 @@ def character_sheet(data, system):
         "items": list(data.get("items", [])),
         "abilities": list(data.get("abilities", [])),
         "ratings": dict(data.get("ratings", {})),
+        # The spells a mage knows (tricks among them) and the ones held ready; tricks are always ready.
+        "spells": list(data.get("spells", [])),
+        "prepared": list(data.get("prepared", [])),
     }
     attributes = system["attributes"]
     problems = (
@@ -316,12 +319,15 @@ class Campaign:
         self._able("roll")
         kind, key, label, attribute = self._stat(name)
         auto = self._condition_banes(attribute)
-        outcome = self._resolve(kind, key, attribute, boons, banes + len(auto), rng)
+        gear = self._gear_banes(key, extra)
+        outcome = self._resolve(kind, key, attribute, boons, banes + len(auto) + len(gear), rng)
         if not pushable:
             outcome["pushable"] = False
+        if (extra.get("defend") or {}).get("needs_dragon"):
+            outcome["success"] = bool(outcome.get("dragon"))  # against a critical hit only a Dragon defends
         event = self.append(
             "check", stat=key, kind=kind, label=label, attribute=attribute,
-            boons=boons, banes=banes + len(auto), condition_banes=auto or None, outcome=outcome, **extra,
+            boons=boons, banes=banes + len(auto) + len(gear), condition_banes=auto or None, gear_banes=gear or None, outcome=outcome, **extra,
         )
         self._after_roll(event, rng)
         return event
@@ -371,7 +377,7 @@ class Campaign:
             event = self.append(
                 "push", of=last["seq"], stat=last["stat"], kind=last["kind"], label=last["label"],
                 attribute=last["attribute"], boons=last["boons"], banes=last["banes"],
-                changes=changes, outcome=outcome, attack=last.get("attack"), search=last.get("search"), quiet=last.get("quiet"),
+                changes=changes, outcome=outcome, attack=last.get("attack"), cast=last.get("cast"), search=last.get("search"), quiet=last.get("quiet"),
             )
             self._after_roll(event, rng)
             if last.get("search"):
@@ -379,7 +385,9 @@ class Campaign:
             # A pushed attack that now hits deals its damage, if the target still stands.
             target = (self.state["combat"] or {}).get("foes", {}).get((last.get("attack") or {}).get("target"))
             if outcome["success"] and target and not target["down"]:
-                self._strike(event, rng)
+                self._land(event, rng)
+            if outcome["success"] and last.get("cast"):
+                self._spell_lands(event, rng)
             return event
 
     # Moves --------------------------------------------------------------------------
@@ -571,6 +579,8 @@ class Campaign:
             value = dice.roll(hit["roll"], rng)
             extra.update(value=value["total"], value_roll=value)
             text = text.replace("{value}", str(value["total"])) if "{value}" in text else f"{text} ({hit['roll']}: {value['total']})"
+        if hit.get("effect"):
+            extra["effect"] = hit["effect"]
         event = self.append("table", table=key, name=table.get("name", key), roll=rolled, total=rolled["total"], text=text, cause=cause, **extra)
         if depth < 5:
             follow = [hit["then"]] if isinstance(hit.get("then"), str) else list(hit.get("then", []))
@@ -834,7 +844,7 @@ class Campaign:
         self._let_stand(rng)
         return self._record("commit", payload, rng)
 
-    def rest(self, rest_id, heal=None, rng=None, tend=False):
+    def rest(self, rest_id, heal=None, rng=None, tend=False, use=()):
         """A rest from the system pack: recover tracks, heal conditions, let time pass (which
         may tick clocks). A `limit` allows one per time unit: Dragonbane's round and stretch
         rests are once per shift. `heal` names the condition to heal first."""
@@ -858,7 +868,13 @@ class Campaign:
         else:
             tracks, rolls = {}, {}
             recover = dict(spec.get("recover", {}))
-            tended = None
+            tended, more = None, {}
+            for name in _listed(use):
+                aid, ability = self._held(name)
+                if not ability.get("heal") or ability.get("rest") != key:
+                    raise SoloError(f"{ability['name']} adds nothing to a {label.lower()}")
+                self._pay(aid, ability)
+                more[ability.get("heals", "hp")] = more.get(ability.get("heals", "hp"), 0) + dice.roll(ability["heal"], rng)["total"]
             if tend:
                 # The solo hero tends their own wounds: a skill roll, and more back on a success.
                 if not spec.get("tend"):
@@ -872,7 +888,7 @@ class Campaign:
                 if amount == "max":
                     value = current["max"]
                 else:
-                    rolls[track] = dice.roll(amount, rng)["total"]
+                    rolls[track] = dice.roll(amount, rng)["total"] + more.get(track, 0)
                     value = min(current["max"], current["value"] + rolls[track])
                 if value != current["value"]:
                     tracks[track] = value
@@ -923,13 +939,14 @@ class Campaign:
         order = sorted(fight["order"] + order, key=lambda f: f["card"])
         return self.append("join", foes=joining, order=order)
 
-    def next_round(self, rng=None):
+    def next_round(self, rng=None, use=()):
         """A new round: every fighter still standing draws a new initiative card."""
         fight = self._fight()
+        self._no_choice_waiting()
         # A round is game time too (ten seconds in Dragonbane), so a clock can count rounds.
         seconds = int(self.system["time"].get("round", 0))
         before = self.state["time"]
-        event = self.append("round", round=fight["round"] + 1, order=self._initiative(fight["foes"], rng), time=seconds or None)
+        event = self.append("round", round=fight["round"] + 1, order=self._initiative(fight["foes"], rng, use), time=seconds or None)
         if seconds:
             self._follow(self._time_triggers(before, before + seconds), event["seq"], rng)
             self._burn(event["seq"])
@@ -940,26 +957,115 @@ class Campaign:
         standing = [f["name"] for f in fight["foes"].values() if not f["down"]]
         return self.append("fight_end", rounds=fight["round"], standing=standing)
 
-    def attack(self, target=None, weapon=None, boons=0, banes=0, rng=None):
+    def attack(self, target=None, weapon=None, boons=0, banes=0, distance=None, defended=None, kind=None, use=(), rng=None):
         """The hero attacks a foe with a carried weapon: a skill check, then on a hit the
-        weapon's damage (plus the hero's damage bonus) minus the foe's armor."""
+        weapon's damage (plus the hero's damage bonus) minus the foe's armor. `distance`, in meters,
+        is how far the foe is: a bow shot from too near or too far, or a blow out of reach, says so.
+        `defended` is what the foe does about it (dodge or parry, using one of its actions); `kind` is the
+        damage a weapon that cuts and stabs does (slashing or piercing); `use` names heroic abilities the
+        blow uses (more damage), paid for when it hits."""
+        self._no_choice_waiting()
         if self._fight()["incoming"]:
             raise SoloError("answer the hit coming at the hero first: defend evade, parry or take")
         foe_id = self._foe(target)
-        arm = combat.weapon(self.system, self.state["pc"], weapon, "attack")
+        pc = self.state["pc"]
+        arm = combat.weapon(self.system, pc, weapon, "attack")
         turns = sum(1 for f in self._fight()["order"] if f["id"] == "pc")
-        if self._count_this_round(lambda e: e["type"] == "check" and e.get("attack")) >= turns:
-            raise SoloError(f"{self.state['pc']['name']} has already attacked this round; the next round comes with solo fight --round")
-        attack = {"weapon": arm["id"], "label": arm["label"], "target": foe_id}
+        if self._count_this_round(lambda e: e["type"] == "check" and e.get("attack") and not e["attack"].get("free")) >= turns:
+            raise SoloError(f"{pc['name']} has already attacked this round; the next round comes with solo fight --round")
+        elif "requires_quiver" in arm["features"] and not any(slug(item).startswith("quiver") for item in pc["items"]):
+            raise SoloError(f"the {arm['label'].lower()} needs a quiver, and {pc['name']} carries none")
+        if kind and kind not in combat.damage_types(arm):
+            raise SoloError(f"the {arm['label'].lower()} can't do {kind} damage: {', '.join(combat.damage_types(arm)) or 'no kind is given for it'}")
+        riders = [self._rider(name, arm, foe_id) for name in _listed(use)]
+        attack = {"weapon": arm["id"], "label": arm["label"], "target": foe_id, **({"distance": distance} if distance is not None else {}),
+                  **({"defended": defended} if defended else {}), **({"kind": kind} if kind else {}), **({"use": riders} if riders else {})}
         event = self.check(arm["skill"], boons, banes, rng, attack=attack)
         if event["outcome"]["success"]:
-            self._strike(event, rng)
+            self._land(event, rng)
         return event
+
+    def _land(self, event, rng):
+        """The hero's attack hit: the foe may dodge or parry it (if the GM said so: it uses one of its
+        actions), then a Dragon on the blow may wait for the player's choice, else the damage is rolled."""
+        attack, outcome = event["attack"], event["outcome"]
+        if attack.get("defended") and self._foe_defends(attack["target"], attack["defended"], outcome.get("dragon", False), event["seq"], rng):
+            return
+        for aid in attack.get("use", []):
+            self._pay(aid, self.system["abilities"][aid])
+        options = self._dragon_choices(attack, outcome)
+        if options:
+            self.append("choice", of=event["seq"], options=options, target=attack["target"])
+        else:
+            self._strike(event, rng)
+
+    def _foe_defends(self, foe_id, how, critical, cause, rng):
+        """A foe dodges or parries the hero's blow, which costs it one of its actions this round. A monster
+        rolls the pack's [combat] monster_defense (15) and only one that carries weapons (`parries`) can
+        parry; anyone else rolls their own EVADE or weapon skill, 5 where the stat block has none. Against
+        a critical hit only a Dragon avoids it. True when the blow is avoided."""
+        foe = self.state["combat"]["foes"][foe_id]
+        profile, rules = self._profile(foe["npc"]), self.system["combat"]
+        monster = bool(profile.get("attacks"))
+        if how not in ("dodge", "parry"):
+            raise SoloError("a foe dodges or parries: --defended dodge|parry")
+        elif how == "parry" and monster and not profile.get("parries"):
+            raise SoloError(f"{foe['name']} carries no weapon to parry with")
+        skill = rules.get("evade", "evade") if how == "dodge" else (profile.get("attack") or {}).get("skill", rules.get("evade", "evade"))
+        value = int(rules.get("monster_defense", 15)) if monster else int(profile.get("skills", {}).get(skill, 5))
+        outcome = mechanics.d20_under(value, rng=rng)
+        outcome["pushable"] = False
+        avoided = bool(outcome["dragon"] if critical else outcome["success"])
+        self.append("defence", foe=foe_id, name=foe["name"], how=how, outcome=outcome, avoided=avoided, critical=critical or None, cause=cause)
+        return avoided
+
+    def dragon(self, choice, target=None, rng=None):
+        """What a Dragon on the hero's roll does, when the pack lets the player choose. On an attack: the
+        weapon's dice twice (double), a second attack on another foe that costs no turn (attack), or a blow
+        that armor doesn't blunt (pierce, a piercing weapon's). On a spell: its damage or range doubled
+        (double), no cost in WP (free), or another spell at once, with a bane (another)."""
+        waiting, choice = self.state["choice"], slug(choice)
+        if not waiting:
+            raise SoloError("no Dragon is waiting for a choice")
+        elif choice not in waiting["options"]:
+            raise SoloError(f"choose what the Dragon does: {', '.join(waiting['options'])}")
+        source = next(e for e in self.events if e["seq"] == waiting["of"])
+        chosen = self.append("dragon", of=waiting["of"], choice=choice)
+        if waiting["kind"] == "spell":
+            self._spell_lands(source, rng, choice=choice)
+            return chosen
+        self._strike(source, rng, choice=choice)
+        if choice == "attack" and not self.state["pc"]["dead"]:
+            foe_id = self._foe(target)
+            if foe_id == source["attack"]["target"]:
+                raise SoloError("the second attack is against another foe")
+            arm = combat.weapons(self.system)[source["attack"]["weapon"]]
+            free = self.check(arm["skill"], 0, 0, rng, attack={"weapon": arm["id"], "label": arm["label"], "target": foe_id, "free": True})
+            if free["outcome"]["success"]:
+                self._land(free, rng)
+        return chosen
+
+    def _dragon_choices(self, attack, outcome):
+        """What a Dragon on the hero's attack can be, when the pack says the player chooses
+        ([combat] dragon = "choice"): the weapon's dice twice; a free attack on another foe (a melee
+        weapon and another foe standing); armor that doesn't count (a piercing weapon). One way to use
+        it is no choice, and the blow is doubled."""
+        if not (attack and outcome.get("dragon") and self.system.get("combat", {}).get("dragon") == "choice" and self.state["combat"]):
+            return None
+        arm = combat.weapons(self.system)[attack["weapon"]]
+        others = [fid for fid, foe in self.state["combat"]["foes"].items() if not foe["down"] and fid != attack["target"]]
+        options = ["double"] + ["attack"] * bool(others and not arm["ranged"]) + ["pierce"] * ("piercing" in arm["features"])
+        return options if len(options) > 1 else None
+
+    def _no_choice_waiting(self):
+        if self.state["choice"]:
+            raise SoloError("a Dragon is waiting for its choice first: solo dragon " + "|".join(self.state["choice"]["options"]))
 
     def enemy(self, foe=None, rng=None):
         """A foe attacks the hero. A monster rolls on its attack table; anyone else rolls
         their attack skill. A hit waits as `incoming` until the hero defends or takes it."""
         fight = self._fight()
+        self._no_choice_waiting()
         if self.state["pc"]["dead"]:
             raise SoloError(f"{self.state['pc']['name']} is dead")
         elif fight["incoming"]:
@@ -971,18 +1077,29 @@ class Campaign:
         attacker = profile.get("attacker")
         roles = attacker if isinstance(attacker, list) else [attacker] if attacker else []
         pending = (fight.get("pending") or {}).get(foe_id)
+        if foe.get("regenerate") and foe["hp"] < foe["max"] and not pending:
+            mended = dice.roll(foe["regenerate"], rng)
+            self.append("heal", target=foe_id, name=foe["name"], roll=mended, hp=min(foe["max"], foe["hp"] + mended["total"]), hp_was=foe["hp"], by="regeneration")
         if (roles or pending) and self.system.get("npcs", {}).get("attacks"):
             return self._npc_turn(foe_id, foe, profile, roles, pending, rng)
         elif profile.get("attacks"):
             key, table, rolled, hit = self._roll_table(profile["attacks"], rng)
+            results = table.get("results", [])
+            index = next((i for i, r in enumerate(results) if r is hit), None)
+            again = index is not None and self.system["combat"].get("monster_repeat") == "next" and foe.get("last_attack") == index
+            if again:
+                # A monster doesn't use one attack on two turns running: a repeated roll becomes the next on the table.
+                index = (index + 1) % len(results)
+                hit = results[index]
             hit = hit or {}
             damage = hit.get("damage")
             # Monster attacks can be evaded but, in Dragonbane, not parried unless the attack says so.
             parry = hit.get("parry", table.get("parry", self.system["combat"].get("monster_parry", True)))
-            incoming = {"damage": damage, "can_defend": hit.get("defend", True), "can_parry": bool(parry)} if damage else None
+            incoming = {"damage": damage, "can_defend": hit.get("defend", True), "can_parry": bool(parry), **({"kind": hit["kind"]} if hit.get("kind") else {})} if damage else None
             if incoming and hit.get("armor") is False:
                 incoming["armor"] = False  # a ghost's hand through the chest: armor doesn't help
-            detail = {"table": key, "total": rolled["total"], "text": hit.get("text", ""), "label": _attack_name(hit.get("text", ""), table.get("name", key))}
+            detail = {"table": key, "total": rolled["total"], "text": hit.get("text", ""), "label": _attack_name(hit.get("text", ""), table.get("name", key)),
+                      "index": index, **({"again": True} if again else {})}
         elif profile.get("attack"):
             spec = profile["attack"]
             if self.system["family"] != "d20-under":
@@ -990,8 +1107,8 @@ class Campaign:
             value = int(spec.get("value") or profile.get("skills", {}).get(spec.get("skill", ""), 0))
             outcome = mechanics.d20_under(value, rng=rng)
             outcome["pushable"] = False
-            damage = combat.damage_expression(spec["damage"], spec.get("bonus", ""), outcome["dragon"], dragon_rule)
-            incoming = {"damage": damage, "can_defend": True} if outcome["success"] else None
+            damage = combat.damage_expression(spec["damage"], spec.get("bonus", ""), outcome["dragon"], "double" if dragon_rule == "choice" else dragon_rule)
+            incoming = {"damage": damage, "can_defend": True, **({"critical": True} if outcome["dragon"] else {})} if outcome["success"] else None
             detail = {"outcome": outcome, "label": spec.get("label", "attack")}
         else:
             raise SoloError(f"{foe['name']} has no attack or attacks in the adventure pack; narrate it and commit the harm")
@@ -1017,10 +1134,12 @@ class Campaign:
             outcome = mechanics.d20_under(value, int(entry.get("boons", 0)), int(entry.get("banes", 0)), rng)
             outcome["pushable"] = False
             base = entry.get("damage") or spec.get("damage", "1d6")
-            damage = combat.damage_expression(base, spec.get("bonus", "") if not entry.get("damage") else "", outcome["dragon"], self.system["combat"].get("dragon"))
+            rule = self.system["combat"].get("dragon")
+            damage = combat.damage_expression(base, spec.get("bonus", "") if not entry.get("damage") else "", outcome["dragon"], "double" if rule == "choice" else rule)
             if entry.get("extra"):
                 damage += f"+{entry['extra']}"
-            incoming = {"damage": damage, "can_defend": True, "from": foe_id, "name": foe["name"], "label": detail["label"]} if outcome["success"] else None
+            incoming = {"damage": damage, "can_defend": True, "from": foe_id, "name": foe["name"], "label": detail["label"],
+                        **({"critical": True} if outcome["dragon"] else {}), **({"ranged": True} if role == "ranged" else {})} if outcome["success"] else None
             detail["outcome"] = outcome
             if int(entry.get("times", 1)) > 1 and not pending:
                 # A volley: the second attack comes as the same result, without a new roll.
@@ -1062,7 +1181,7 @@ class Campaign:
         self._settle()
         return event
 
-    def wound(self, target, amount, why, armor=True, double=False, rng=None):
+    def wound(self, target, amount, why, armor=True, double=False, kind=None, rng=None):
         """Harm to a foe that isn't a weapon blow: fire, a spell, a falling bookcase, one
         creature turned on another, or a power that ends it where it stands ("all").
         The GM rules that it happens; the dice (or the adventure's number) say how much."""
@@ -1077,11 +1196,12 @@ class Campaign:
             rolled, dealt = None, foe["hp"]
         else:
             rolled = dice.roll(text, rng)
-            dealt = max(0, rolled["total"] * (2 if double else 1) - (foe["armor"] if armor else 0))
+            dealt, resisted = combat.resisted(foe, slug(kind) if kind else None, max(0, rolled["total"] * (2 if double else 1) - (foe["armor"] if armor else 0)))
         hp = max(0, foe["hp"] - dealt)
         event = self.append("wound", target=foe_id, name=foe["name"], why=why.strip(), expr=None if rolled is None else text,
                             roll=rolled, armor=foe["armor"] if armor and rolled else 0, double=double or None,
-                            dealt=dealt, hp=hp, hp_was=foe["hp"], down=hp == 0)
+                            dealt=dealt, hp=hp, hp_was=foe["hp"], down=hp == 0, kind=slug(kind) if kind else None,
+                            resisted=None if rolled is None else resisted)
         self._settle()
         return event
 
@@ -1096,7 +1216,7 @@ class Campaign:
         payload = {"note": why.strip(), **({"pc": {track: f"-{dealt}"}} if dealt else {})}
         return self._record("harm", payload, rng, expr=str(amount), roll=rolled, armor=worn, dealt=dealt, by=why.strip())
 
-    def defend(self, how, weapon=None, rng=None):
+    def defend(self, how, weapon=None, rng=None, use=()):
         """Answer an incoming hit: evade or parry (a roll that can't be pushed; it stops
         the hit on a success) or take it. A failed defence takes the hit."""
         incoming = self._fight()["incoming"]
@@ -1114,20 +1234,44 @@ class Campaign:
             if not event["outcome"]["success"]:
                 self.take(rng, cause=event["seq"])
             return event
-        elif how not in ("evade", "parry"):
+        abilities = [self._held(name) for name in _listed(use)]
+        # A shield wall parries the monster's blow that nothing else could.
+        parryable = incoming.get("can_parry", True) or any(ability.get("unparryable") for _, ability in abilities)
+        if how not in ("evade", "parry"):
             raise SoloError("defend with evade, parry, resist or take")
         elif not incoming.get("can_defend", True):
             raise SoloError(f"{incoming['label']} can't be dodged or parried: defend take")
-        elif how == "parry" and not incoming.get("can_parry", True):
+        elif how == "parry" and not parryable:
             raise SoloError(f"{incoming['label']} can't be parried: defend evade, or take")
         if how == "evade":
             skill, arm = self.system["combat"].get("evade", "evade"), None
         else:
             arm = combat.weapon(self.system, self.state["pc"], weapon, "parry")
             skill = arm["skill"]
-        event = self.check(skill, rng=rng, pushable=False, defend={"how": how, "weapon": arm and arm["label"], "against": incoming["from"]})
+        for _, ability in abilities:
+            if ability.get("boon") == "parry" and (how != "parry" or ability.get("weapon") not in arm["features"]):
+                raise SoloError(f"{ability['name']} needs a parry with a {ability.get('weapon', 'weapon')}")
+            elif not ability.get("boon") and ability.get("reaction") != ("parry" if how == "parry" else "dodge"):
+                raise SoloError(f"{ability['name']} doesn't help with {how}")
+        boons = 0
+        for aid, ability in abilities:
+            self._pay(aid, ability)
+            boons += bool(ability.get("boon"))
+        defence = {"how": how, "weapon": arm and arm["label"], "weapon_id": arm and arm["id"], "against": incoming["from"],
+                   **({"needs_dragon": True} if incoming.get("critical") else {})}
+        event = self.check(skill, boons, 0, rng, pushable=False, defend=defence)
         if not event["outcome"]["success"]:
             self.take(rng, cause=event["seq"])
+        elif how == "parry":
+            if arm["durability"] and incoming.get("kind") != "piercing":
+                # The blow lands on the weapon: a blow worse than it can take breaks it, until it is repaired.
+                rolled = dice.roll(incoming["damage"], rng)
+                self.append("durability", weapon=arm["id"], label=arm["label"], how="parry", expr=incoming["damage"], roll=rolled,
+                            damage=rolled["total"], durability=arm["durability"], broke=rolled["total"] > arm["durability"], cause=event["seq"])
+            if (event["outcome"]["dragon"] and not incoming.get("critical") and not incoming.get("ranged") and not arm["ranged"]
+                    and self.system["combat"].get("parry_dragon") == "counter" and not self.state["combat"]["foes"][incoming["from"]]["down"]):
+                # A Dragon on a parry is a counterattack that can't be avoided.
+                self._strike(event, rng, attack={"weapon": arm["id"], "label": arm["label"], "target": incoming["from"]}, choice="counter")
         return event
 
     def take(self, rng=None, cause=None):
@@ -1142,8 +1286,321 @@ class Campaign:
         payload = {"note": f"hit by {incoming['name']} ({incoming['label']})"}
         if dealt:
             payload["pc"] = {track: f"-{dealt}"}
-        return self._record("harm", payload, rng, expr=incoming["damage"], roll=rolled, armor=armor, dealt=dealt, cause=cause,
+        harm = self._record("harm", payload, rng, expr=incoming["damage"], roll=rolled, armor=armor, dealt=dealt, cause=cause,
                             by=incoming["name"], source=incoming["from"])
+        foe = (self.state["combat"] or {}).get("foes", {}).get(incoming["from"])
+        if dealt and foe and foe.get("drain") and not foe["down"] and foe["hp"] < foe["max"]:
+            self.append("heal", target=incoming["from"], name=foe["name"], roll=None, hp=min(foe["max"], foe["hp"] + dealt), hp_was=foe["hp"], by="drain")
+        return harm
+
+    def repair(self, weapon, rng=None, artisan=False):
+        """Mend a weapon that broke or was damaged: a roll with the skill the pack names ([combat]
+        repair: CRAFTING), or, for one an artisan sees to, no roll."""
+        pc = self.state["pc"]
+        arm = next((w for w in combat.weapons(self.system).values() if slug(weapon) in (w["id"], slug(w["label"]))), None)
+        condition = pc.get("damaged", {}).get(arm["id"]) if arm else None
+        skill = self.system.get("combat", {}).get("repair")
+        if arm is None:
+            raise SoloError(f"no weapon called {weapon!r}; weapons: {', '.join(pc.get('damaged', {})) or 'none need mending'}")
+        elif not condition:
+            raise SoloError(f"the {arm['label'].lower()} is whole")
+        elif not artisan and not skill:
+            raise SoloError(f"{self.system['name']} has no [combat] repair skill: an artisan mends it (solo repair {arm['id']} --artisan)")
+        elif artisan:
+            return self.append("repair", weapon=arm["id"], label=arm["label"], by="an artisan")
+        event = self.check(skill, rng=rng, pushable=False, repair={"weapon": arm["id"]})
+        return self.append("repair", weapon=arm["id"], label=arm["label"], by=event["label"], cause=event["seq"]) if event["outcome"]["success"] else event
+
+    # Journeys -----------------------------------------------------------------------------
+    #
+    # Travel goes by the shift: so many kilometers on foot or mounted, two shifts a day (a third is a
+    # forced march: the hero becomes Exhausted). Off a road the pathfinder rolls a skill each shift: a
+    # Dragon doubles the ground covered, a failure is a mishap from the pack's table.
+
+    def journey(self, km, mounted=False, road=False, difficult=False, use=(), rng=None):
+        """Travel `km` kilometers, a shift at a time, until the hero arrives or something needs the GM. Leaving a road, the
+        pathfinder (the hero) rolls each shift, with a bane for no map or hard going, a boon for a spyglass."""
+        rules = self.system.get("journey")
+        self._able("travel")
+        if not rules:
+            raise SoloError(f"{self.system['name']} has no [journey] rules: the GM reads the rules page and commits the time")
+        elif self.state["combat"]:
+            raise SoloError("no travelling in the middle of a fight")
+        elif km <= 0:
+            raise SoloError("how far? solo journey <kilometers>")
+        shift, per_day = self.system["time"]["shift"], int(rules.get("shifts_per_day", 4))
+        speed, left, walked = int(rules["mounted" if mounted else "foot"]), km, 0
+        carried = {slug(i) for i in self.state["pc"]["items"]}
+        boons, banes = int(any(i.startswith("spyglass") for i in carried)), int(not road) * int(not any(i.startswith("map") for i in carried)) + int(difficult)
+        riders = [self._held(name) for name in _listed(use)]
+        for _, ability in riders:
+            if ability.get("boon") != "journey":
+                raise SoloError(f"{ability['name']} doesn't help on a journey")
+        while left > 0:
+            today = self.state["travel"]["shifts"] if self.state["travel"]["day"] == self.state["time"] // (shift * per_day) else 0
+            limit, pc = int(rules.get("travel_shifts", 2)), self.state["pc"]
+            if today > limit or (today == limit and "exhausted" in pc["conditions"]):
+                if walked:
+                    break
+                raise SoloError(f"{pc['name']} has walked as far as anyone does today: {today} shifts" + (" (Exhausted, no forced march)" if today == limit else ""))
+            forced = today >= limit
+            ground, roll, mishap = speed, None, None
+            if not road:
+                for aid, ability in riders:
+                    self._pay(aid, ability)
+                helped, riders = len(riders), []
+                roll = self.check(rules.get("skill", "bushcraft"), boons + helped, banes, rng, pushable=False, journey={"left": left})
+                if roll["outcome"]["success"]:
+                    ground = speed * (2 if roll["outcome"].get("dragon") else 1)
+                else:
+                    mishap = self.table(rules["mishaps"], rng=rng, cause=roll["seq"]) if rules.get("mishaps") else None
+                    effect = (mishap or {}).get("effect") or {}
+                    ground = 0 if effect.get("distance") == "none" else speed // 2 if effect.get("distance") == "half" else speed
+            changes = {"note": f"travels a shift, {min(ground, left)} of {left} kilometers", "time": {"shift": 1}}
+            if forced:
+                changes["pc"] = {"conditions": {"add": ["exhausted"]}}
+            done = min(ground, left)
+            self._record("journey", changes, rng, distance=done, left=left - done, day=self.state["time"] // (shift * per_day), shifts=today + 1,
+                         forced=forced or None, cause=roll["seq"] if roll else None)
+            left -= done
+            walked += 1
+            if mishap and (mishap.get("effect") or {}).get("gm"):
+                break
+        return self.events[-1] if walked else None
+
+    def camp(self, use=(), rng=None):
+        """Find a place to rest in the wild: a roll with the pack's journey skill, a bane without a sleeping fur, a boon with a
+        tent. A success makes the shift a rest the hero can take (solo rest shift); a failure doesn't."""
+        rules = (self.system.get("journey") or {}).get("camp")
+        if not rules:
+            raise SoloError(f"{self.system['name']} has no [journey] camp rules")
+        carried = {slug(i) for i in self.state["pc"]["items"]}
+        banes = int(not any(i.startswith(rules.get("needs", "sleeping_fur")) for i in carried))
+        boons = int(any(i.startswith(rules.get("helps", "tent")) for i in carried))
+        return self.check(rules.get("skill", "bushcraft"), boons, banes, rng, pushable=False, journey={"camp": True})
+
+    # Magic --------------------------------------------------------------------------------
+    #
+    # A spell costs WP whatever comes of it; then the school is rolled. On a success it does
+    # what its data says (damage, healing) and the GM the rest, from the rule page. A Dragon is the
+    # player's choice, a Demon a mishap (the tables are the pack's).
+
+    def cast(self, spell, power=1, targets=(), boons=0, banes=0, body=None, grimoire=False, school=None, defended=None, rng=None):
+        """Cast a spell the hero knows, at a power level (1 to 3): pay its WP, then roll the school. `targets` are
+        the foes a damage spell is for; `body` a die (d6) to draw power from the body when the hero has
+        nearly none left: it gives that many WP to spend at once and costs as many HP; `grimoire` casts a
+        spell that isn't prepared, which takes twice as long; `defended` is how a foe avoids it."""
+        self._able("cast a spell")
+        rules = self.system.get("magic")
+        if not rules:
+            raise SoloError(f"{self.system['name']} has no [magic] rules")
+        self._no_choice_waiting()
+        sid, spec = magic.find(self.system, spell)
+        pc, name = self.state["pc"], spec.get("name", spell)
+        trick = bool(spec.get("trick"))
+        power = 1 if trick or not spec.get("power", True) else power
+        track, hp_track = rules.get("track", "wp"), (self.system.get("combat") or {}).get("track", "hp")
+        amount = magic.cost(self.system, spec, power)
+        have, foes = pc["tracks"][track]["value"], []
+        if slug(sid) not in {slug(k) for k in pc.get("spells", [])} and spec.get("name", sid) not in pc.get("spells", []):
+            raise SoloError(f"{pc['name']} doesn't know {name}; spells: {', '.join(pc.get('spells', [])) or 'none'}")
+        elif not trick and not self._prepared(sid, spec) and not grimoire:
+            raise SoloError(f"{name} isn't prepared: cast it from the grimoire (--grimoire: it takes twice as long, and isn't for a reaction) or prepare it (solo prepare)")
+        elif grimoire and spec.get("casting_time") == "reaction":
+            raise SoloError(f"{name} is a reaction spell, which can't be cast from the grimoire")
+        elif not 1 <= power <= int(rules.get("max_power", 3)):
+            raise SoloError(f"a spell's power level is 1 to {rules.get('max_power', 3)}")
+        elif defended and defended not in spec.get("avoid", []):
+            raise SoloError(f"{name} can't be avoided that way" + (f" (it can be: {', '.join(spec['avoid'])})" if spec.get("avoid") else " (it can't be dodged or parried)"))
+        elif body and (spec.get("heal") or have > int(rules.get("body_below", 1)) or body not in rules.get("body", [])):
+            raise SoloError("power from the body is for a hero with " + f"{rules.get('body_below', 1)} {track.upper()} or none left, and not for healing; the die is one of {', '.join(rules.get('body', []))}")
+        elif not body and have < amount:
+            raise SoloError(f"{name} at power {power} costs {amount} {track.upper()}, and {pc['name']} has {have}" + (f" (power from the body: --body {rules['body'][1]})" if rules.get("body") and have <= int(rules.get("body_below", 1)) and not spec.get("heal") else ""))
+        if spec.get("damage") and self.state["combat"]:
+            foes = [self._foe(t) for t in _listed(targets)] if targets else [self._foe(None)]
+        drawn = dice.roll(body, rng)["total"] if body else 0
+        own = max(0, amount - drawn)
+        if own > have:
+            raise SoloError(f"the body gave {drawn}, and {name} at power {power} costs {amount}; {pc['name']} has {have} of their own, too little to add")
+        carried = {slug(i) for i in pc["items"]}
+        metal = sorted(k for k, g in self.system.get("gear", {}).items() if g.get("metal") and k in carried)
+        payload = {"note": f"casts {name}", "pc": {**({track: f"-{own}"} if own else {}), **({hp_track: f"-{drawn}"} if drawn else {})}}
+        paid = self._record("spell", payload, rng, spell=sid, name=name, power=power, cost=amount, body=drawn or None, metal=metal or None, grimoire=grimoire or None)
+        if trick:
+            return paid
+        skill = magic.school(self.system, self.state["pc"], spec, school)
+        event = self.check(skill, boons, banes, rng, cast={"spell": sid, "name": name, "power": power, "targets": foes, "cost": amount,
+                                                          **({"defended": defended} if defended else {})})
+        if event["outcome"]["success"]:
+            self._spell_lands(event, rng)
+        return event
+
+    def _prepared(self, sid, spec):
+        held = {slug(p) for p in self.state["pc"].get("prepared", [])}
+        return sid in held or slug(spec.get("name", sid)) in held
+
+    def _spell_lands(self, event, rng, choice=None):
+        """The spell's roll succeeded: a Dragon waits for the player's choice; otherwise the damage or the healing
+        the spell's data gives is done, its targets having the chance to avoid it if they can."""
+        cast, outcome = event["cast"], event["outcome"]
+        spec, rules = self.system["spells"][cast["spell"]], self.system["magic"]
+        if choice is None and outcome.get("dragon") and rules.get("dragon"):
+            self.append("choice", of=event["seq"], kind="spell", options=list(rules["dragon"]))
+            return
+        if choice == "free":
+            self._record("spell_effect", {"note": "the Dragon pays for the spell", "pc": {rules.get("track", "wp"): f"+{cast['cost']}"}}, rng)
+        double = choice == "double"
+        if spec.get("damage"):
+            dice_for = [spec["damage"], *spec.get("chain", [])]
+            for foe_id, expr in zip(cast.get("targets", []), dice_for):
+                if cast.get("defended") and self._foe_defends(foe_id, cast["defended"], outcome.get("dragon", False), event["seq"], rng):
+                    continue
+                self.wound(foe_id, magic.leveled(expr, spec.get("per_level"), cast["power"]), cast["name"], armor=spec.get("armor", True),
+                           double=double, kind=spec.get("kind", "magic"), rng=rng)
+        if spec.get("heal"):
+            healed = dice.roll(magic.leveled(spec["heal"], spec.get("per_level"), cast["power"]), rng)["total"] * (2 if double else 1)
+            hp_track = (self.system.get("combat") or {}).get("track", "hp")
+            self._record("spell_effect", {"note": f"{cast['name']} heals", "pc": {hp_track: f"+{healed}"}}, rng, healed=healed)
+
+    def prepare(self, spell, drop=None):
+        """Hold a spell ready, in place of another when the hero is at the limit: as many as the base chance
+        of the attribute the rules name (tricks are always ready). Studying takes a shift, the GM's to give."""
+        sid, spec = magic.find(self.system, spell)
+        pc, rules = self.state["pc"], self.system.get("magic")
+        known = {slug(k) for k in pc.get("spells", [])}
+        if not rules:
+            raise SoloError(f"{self.system['name']} has no [magic] rules")
+        elif sid not in known and slug(spec.get("name", sid)) not in known:
+            raise SoloError(f"{pc['name']} doesn't know {spec.get('name', sid)}")
+        elif spec.get("trick"):
+            raise SoloError("a magic trick is always ready")
+        elif self._prepared(sid, spec):
+            raise SoloError(f"{spec.get('name', sid)} is already prepared")
+        held = [p for p in pc.get("prepared", [])]
+        limit = magic.limit(self.system, pc)
+        out = None
+        if len(held) >= limit:
+            if not drop:
+                raise SoloError(f"{pc['name']} can hold {limit} spells prepared: drop one (--drop <spell>): {', '.join(held)}")
+            out = next((h for h in held if slug(h) in (slug(drop), slug(magic.find(self.system, drop)[1].get("name", drop)))), None)
+            if out is None:
+                raise SoloError(f"{drop!r} isn't prepared; prepared: {', '.join(held)}")
+        payload = {"note": f"prepares {spec.get('name', sid)}", "pc": {"prepared": {"add": [spec.get("name", sid)], "remove": [out] if out else []}}}
+        return self._record("prepare", payload, None, spell=sid, name=spec.get("name", sid), dropped=out)
+
+    def learn(self, spell, source="teacher", rng=None):
+        """Learn a spell, from a teacher or a grimoire. A trick needs neither a roll nor a mark. A spell takes a mark
+        for its school, and a roll: the INT roll with a boon a teacher gives, or LANGUAGES from a grimoire."""
+        sid, spec = magic.find(self.system, spell)
+        pc, rules = self.state["pc"], self.system.get("magic")
+        name, known = spec.get("name", sid), {slug(k) for k in self.state["pc"].get("spells", [])}
+        if not rules:
+            raise SoloError(f"{self.system['name']} has no [magic] rules")
+        elif sid in known or slug(name) in known:
+            raise SoloError(f"{pc['name']} already knows {name}")
+        elif spec.get("trick"):
+            return self._record("learn", {"note": f"learns {name}", "pc": {"spells": {"add": [name]}}, "time": dict(rules.get("trick_time", {"stretch": 1}))}, rng, spell=sid, name=name)
+        elif source not in rules.get("learn", {}):
+            raise SoloError(f"learn from one of: {', '.join(rules.get('learn', {})) or 'none'}")
+        school, unmet = spec.get("school"), self._unmet_prerequisite(spec)
+        used = magic.skill_of(self.system, school)
+        if school in self.system["skills"] and not pc["skills"].get(used, {}).get("trained"):
+            raise SoloError(f"{name} is of {school}, and {pc['name']} has no skill level in {'it' if used == school else used}")
+        elif unmet:
+            raise SoloError(f"{name} asks for {unmet} first")
+        elif school in self.system["skills"] and used not in pc["marks"]:
+            raise SoloError(f"learning {name} takes an advancement mark for {used}, and {pc['name']} has none (solo mark {used})")
+        how = rules["learn"][source]
+        event = self.check(how["roll"], int(how.get("boons", 0)), 0, rng, pushable=False, learn={"spell": sid, "source": source})
+        payload = {"note": f"learns {name}", "pc": {"spells": {"add": [name]}}} if event["outcome"]["success"] else {"note": f"fails to learn {name}"}
+        return self._record("learn", payload, rng, spell=sid, name=name, source=source, learned=bool(event["outcome"]["success"]),
+                            mark=used if used in pc["marks"] else None, cause=event["seq"])
+
+    def _unmet_prerequisite(self, spec):
+        """What a spell asks for first that the hero lacks, in words: a school they are trained in or a spell they know. An entry
+        that is a list is one of them ("PROTECTOR or DISPEL"); a school is asked before the spells."""
+        pc = self.state["pc"]
+        known = {slug(k) for k in pc.get("spells", [])}
+        has = lambda need: bool(pc["skills"].get(magic.skill_of(self.system, need), {}).get("trained")) if need in self.system["skills"] else slug(need) in known
+        lacking = [need if isinstance(need, list) else [need] for need in _listed(spec.get("prerequisite"))]
+        lacking = [options for options in lacking if not any(has(option) for option in options)]
+        first = next((options for options in lacking if options[0] in self.system["skills"]), None) or next(iter(lacking), None)
+        return " or ".join(first) if first else None
+
+    # Heroic abilities -----------------------------------------------------------------
+
+    def use(self, ability, cost=None):
+        """Pay for a heroic ability the hero has, and log it: for the ones the GM runs from the rule
+        page. The ones the engine runs are asked for where they work: --use on an attack, a defence, a
+        stretch rest or a new round."""
+        aid, spec = self._held(ability)
+        return self._pay(aid, spec, cost)
+
+    def _held(self, name):
+        """(id, spec) of a heroic ability the system knows and the hero has."""
+        key, abilities, pc = slug(name), self.system.get("abilities", {}), self.state["pc"]
+        found = next(((aid, spec) for aid, spec in abilities.items() if key in (aid, slug(spec.get("name", aid)))), None)
+        held = {slug(a) for a in pc["abilities"]}
+        if found is None:
+            raise SoloError(f"no heroic ability {name!r} in {self.system['name']}'s rules the engine knows; they are: {', '.join(abilities) or 'none'}")
+        elif found[0] not in held and slug(found[1].get("name", found[0])) not in held:
+            raise SoloError(f"{pc['name']} doesn't have {found[1].get('name', found[0])}")
+        return found
+
+    def _paying(self, spec, cost=None):
+        """What an ability costs: {track: amount}. A cost that "varies" is given when it is used."""
+        pay = spec.get("pay", {})
+        if pay == "varies":
+            if not cost:
+                raise SoloError(f"{spec.get('name')} costs what the hero chooses to spend: --cost <points>")
+            return {spec.get("track", "wp"): int(cost)}
+        return {track: int(amount) for track, amount in pay.items()}
+
+    def _pay(self, aid, spec, cost=None):
+        pc, amounts = self.state["pc"], self._paying(spec, cost)
+        short = next((t for t, n in amounts.items() if pc["tracks"][t]["value"] < n), None)
+        if short:
+            raise SoloError(f"{spec.get('name', aid)} costs {', '.join(f'{n} {t.upper()}' for t, n in amounts.items())}, and {pc['name']} has {pc['tracks'][short]['value']}")
+        changes = {"pc": {"tracks": {t: pc["tracks"][t]["value"] - n for t, n in amounts.items()}, "tracks_was": {t: pc["tracks"][t]["value"] for t in amounts}}} if amounts else {}
+        return self.append("ability", ability=aid, name=spec.get("name", aid), cost=amounts or None, changes=changes)
+
+    def _rider(self, name, arm, foe_id):
+        """An ability an attack uses, checked before the roll: it adds damage, to the foes and weapons it is for."""
+        aid, spec = self._held(name)
+        profile = self._profile(self.state["combat"]["foes"][foe_id]["npc"])
+        if not spec.get("extra_damage"):
+            raise SoloError(f"{spec.get('name', aid)} doesn't add to an attack")
+        elif spec.get("against") == "monster" and not profile.get("attacks"):
+            raise SoloError(f"{spec['name']} is for monsters, and {self.state['combat']['foes'][foe_id]['name']} isn't one")
+        elif spec.get("weapon") == "unarmed" and arm["id"] != "unarmed":
+            raise SoloError(f"{spec['name']} is for an unarmed attack")
+        elif spec.get("grip") and arm.get("grip") != spec["grip"]:
+            raise SoloError(f"{spec['name']} needs a weapon held in {spec['grip']} hands")
+        elif spec.get("melee") and arm["ranged"]:
+            raise SoloError(f"{spec['name']} is for a melee weapon")
+        pc, amounts = self.state["pc"], self._paying(spec)
+        short = next((t for t, n in amounts.items() if pc["tracks"][t]["value"] < n), None)
+        if short:  # a cost the hero can't meet is known before the roll, not after it
+            raise SoloError(f"{spec['name']} costs {', '.join(f'{n} {t.upper()}' for t, n in amounts.items())}, and {pc['name']} has {pc['tracks'][short]['value']}")
+        return aid
+
+    def _unmet(self, name):
+        """Why the hero can't have this ability yet (its skill requirement), or None."""
+        spec = next((spec for aid, spec in self.system.get("abilities", {}).items() if slug(name) in (aid, slug(spec.get("name", aid)))), None)
+        need, pc = (spec or {}).get("requires"), self.state["pc"]
+        if not need:
+            return None
+        weapons = combat.weapons(self.system)
+        kinds = {"weapon": {w["skill"] for w in weapons.values() if w["id"] != "unarmed"},
+                 "melee": {w["skill"] for w in weapons.values() if w["id"] != "unarmed" and not w["ranged"]},
+                 "str_melee": {w["skill"] for w in weapons.values() if w["id"] != "unarmed" and not w["ranged"] and self.system["skills"].get(w["skill"], {}).get("attribute") == "str"},
+                 "magic": {k for k, sk in self.system["skills"].items() if not sk["untrained"]}}
+        skills = need.get("skills") or sorted(kinds.get(need.get("kind"), ()))
+        best = max((pc["skills"].get(k, {}).get("value", 0) for k in skills), default=0)
+        if best < int(need.get("level", 0)):
+            label = " or ".join(self.system["skills"][k]["name"] if k in self.system["skills"] else k for k in skills) if need.get("skills") else f"any {need['kind'].replace('_', '-')} skill"
+            return f"needs {label} at {need['level']} (the best is {best})"
+        return None
 
     # Dying ----------------------------------------------------------------------------
 
@@ -1304,6 +1761,32 @@ class Campaign:
     def _condition_banes(self, attribute):
         return [c for c in self.state["pc"]["conditions"] if self.system["conditions"].get(c) == attribute]
 
+    def _gear_banes(self, skill, extra):
+        """What the hero carries that puts a bane on this roll, each as a word for the log: worn armor
+        on the skills it hampers (and a helmet on ranged attacks), a weapon the hero lacks the STR for or
+        that is damaged, a shot from too near or too far. A weapon they can't use at all, or can't reach
+        with, refuses the roll."""
+        pc, attack, defend = self.state["pc"], extra.get("attack"), extra.get("defend")
+        arm = combat.weapons(self.system).get((attack or {}).get("weapon") or (defend or {}).get("weapon_id") or "")
+        found = combat.armor_banes(self.system, pc, skill, ranged=bool(attack and arm and arm["ranged"]))
+        if arm:
+            weak, helpless = combat.strength_needed(self.system, pc, arm)
+            condition = pc.get("damaged", {}).get(arm["id"])
+            blow = combat.reach(self.system, pc, arm, attack["distance"]) if attack and attack.get("distance") is not None else None
+            if helpless:
+                raise SoloError(f"{pc['name']} is too weak for the {arm['label'].lower()}: it needs STR {arm['str']}")
+            elif condition == "broken":
+                raise SoloError(f"the {arm['label'].lower()} is broken: mend it first (solo repair {arm['id']})")
+            elif blow and blow[0] == "out":
+                raise SoloError(blow[1])
+            if weak:
+                found.append(f"STR {arm['str']} needed")
+            if condition == "damaged":
+                found.append(f"{arm['label'].lower()} damaged")
+            if blow:
+                found.append(blow[1])
+        return found
+
     def _resolve(self, kind, key, attribute, boons, banes, rng):
         family = self.system["family"]
         if family == "d20-under":
@@ -1349,9 +1832,9 @@ class Campaign:
         for event in reversed(self.events):
             if event["type"] in ("fight", "round"):
                 break
-            elif event["type"] == "enemy" and not event.get("queued"):
+            elif event["type"] in ("enemy", "defence") and not event.get("queued"):
                 acted[event["foe"]] += 1
-            elif event["type"] == "death_roll" or (event["type"] == "check" and event.get("attack")):
+            elif event["type"] == "death_roll" or (event["type"] == "check" and event.get("attack") and not event["attack"].get("free")):
                 acted["pc"] += 1
         # Each card is a turn: a monster with ferocity 2, or a hero with Army of One, holds two.
         standing = {"pc", *(fid for fid, foe in fight["foes"].items() if not foe["down"])}
@@ -1440,6 +1923,14 @@ class Campaign:
                 roster[foe_id]["ferocity"] = int(stats["ferocity"])
             if stats.get("immune"):
                 roster[foe_id]["immune"] = stats["immune"] if isinstance(stats["immune"], str) else "weapons"
+            # Resisting (half damage of a kind, rounded up), being immune to a kind, healing each turn, and healing by harm done.
+            for key in ("resist", "immune_to"):
+                if stats.get(key):
+                    roster[foe_id][key] = [stats[key]] if isinstance(stats[key], str) else list(stats[key])
+            if stats.get("regenerate"):
+                roster[foe_id]["regenerate"] = str(stats["regenerate"])
+            if stats.get("drain"):
+                roster[foe_id]["drain"] = True
 
         return roster
 
@@ -1455,28 +1946,56 @@ class Campaign:
         return next((spec for aid, spec in self.system.get("abilities", {}).items()
                      if key in spec and (aid in held or slug(spec.get("name", "")) in held)), None)
 
-    def _initiative(self, foes, rng):
+    def _initiative(self, foes, rng, use=()):
+        """Deal the round. The hero's abilities change it: one draws two cards and keeps the better
+        (initiative_pick), one keeps last round's card (initiative_keep); each is paid for."""
         fighters = [("pc", self.state["pc"]["name"])] * self._cards("pc")
         fighters += [(fid, f["name"]) for fid, f in foes.items() if not f["down"] for _ in range(self._cards(fid, f))]
-        cards = combat.deal(int(self.system["combat"].get("initiative", 10)), len(fighters), rng)
+        total, picked, kept = int(self.system["combat"].get("initiative", 10)), False, False
+        for name in _listed(use):
+            aid, ability = self._held(name)
+            if not (ability.get("initiative_pick") or ability.get("initiative_keep")):
+                raise SoloError(f"{ability['name']} doesn't change the initiative")
+            self._pay(aid, ability)
+            picked, kept = picked or bool(ability.get("initiative_pick")), kept or bool(ability.get("initiative_keep"))
+        last = next((f["card"] for f in (self.state["combat"] or {}).get("order", []) if f["id"] == "pc"), None)
+        if kept and last:
+            cards = [last, *combat.deal(total, len(fighters) - 1 + picked, rng, reserved=[last])]
+        else:
+            cards = combat.deal(total, len(fighters) + picked, rng)
+        if picked:
+            spare = cards.pop()
+            cards[0] = min(cards[0], spare)
         return sorted(({"id": fid, "name": name, "card": card} for (fid, name), card in zip(fighters, cards)), key=lambda f: f["card"])
 
-    def _strike(self, event, rng):
-        """Damage from an attack that hit: weapon dice (twice on a Dragon, if the pack says
-        so) plus the damage bonus, minus the target's armor."""
-        attack = event["attack"]
+    def _strike(self, event, rng, attack=None, choice=None):
+        """Damage from an attack that hit: weapon dice (twice on a critical hit, as the pack says:
+        always, or when the player chooses it) plus the damage bonus, minus the target's armor, unless
+        the player chose a blow that goes through it. `attack` is the hero's blow when the event isn't
+        the attack's own (a parry's counterattack, which a Dragon doesn't double)."""
+        attack = attack or event["attack"]
         arm = combat.weapons(self.system)[attack["weapon"]]
         foe = self.state["combat"]["foes"][attack["target"]]
+        rule = self.system["combat"].get("dragon")
+        critical = event["outcome"].get("dragon", False) and choice != "counter"
+        double = critical and (rule == "double" or (rule == "choice" and choice in (None, "double")))
+        armor = 0 if choice == "pierce" else foe["armor"]
         bonus = combat.damage_bonus(self.system, self.state["pc"], arm["bonus"])
-        expr = combat.damage_expression(arm["damage"], bonus, event["outcome"].get("dragon", False), self.system["combat"].get("dragon"))
+        expr = combat.damage_expression(arm["damage"], bonus, double, "double")
+        expr += "".join(f"+{self.system['abilities'][aid]['extra_damage']}" for aid in attack.get("use", []))
         rolled = dice.roll(expr, rng)
-        dealt = 0 if foe.get("immune") else max(0, rolled["total"] - foe["armor"])
+        kind = attack.get("kind") or next(iter(combat.damage_types(arm)), None)
+        dealt, resisted = combat.resisted(foe, kind, 0 if foe.get("immune") else max(0, rolled["total"] - armor))
         hp = max(0, foe["hp"] - dealt)
         damage = self.append(
             "damage", of=event["seq"], target=attack["target"], name=foe["name"], weapon=arm["label"],
-            expr=expr, roll=rolled, armor=foe["armor"], dealt=dealt, hp=hp, hp_was=foe["hp"], down=hp == 0,
-            immune=foe.get("immune"),
+            expr=expr, roll=rolled, armor=armor, dealt=dealt, hp=hp, hp_was=foe["hp"], down=hp == 0,
+            immune=foe.get("immune"), kind=kind, resisted=resisted, **({"how": choice} if choice in ("pierce", "counter") else {}),
         )
+        if dealt == 0 and armor and not foe.get("immune") and arm["durability"] and not arm["ranged"]:
+            # A melee blow the armor stops entirely is suffered by the weapon, which may break.
+            self.append("durability", weapon=arm["id"], label=arm["label"], how="armor", expr=expr, roll=rolled,
+                        damage=rolled["total"], durability=arm["durability"], broke=rolled["total"] > arm["durability"], cause=damage["seq"])
         self._settle()
         return damage
 
@@ -1523,6 +2042,7 @@ class Campaign:
 
     def _target(self, kind, key, attribute):
         pc = self.state["pc"]
+        key = self.system["skills"].get(key, {}).get("uses", key) if kind == "skill" else key
         if kind == "attribute":
             return pc["attributes"][attribute]
         elif key in pc["skills"]:
@@ -1569,16 +2089,56 @@ class Campaign:
         outcome = event["outcome"]
         triggers = [f"check:{name}" for name in ("dragon", "demon") if outcome.get(name)]
         effects = self.system.get("effects", {})
-        if not self.state["combat"] and not event.get("attack") and not event.get("defend") and not event.get("quiet"):
+        if not self.state["combat"] and not event.get("attack") and not event.get("defend") and not event.get("quiet") and not event.get("cast") and not event.get("journey"):
             for name in ("dragon", "demon"):
                 if outcome.get(name) and effects.get(name):
                     self.table(effects[name], rng=rng, cause=event["seq"])
+        self._mishap(event, rng)
         for name in outcome.get("triggers", []):
             triggers.append(f"check:{name}")
             table = self.system.get("triggers", {}).get(name, {}).get("table")
             if table:
                 self.table(table, rng=rng, cause=event["seq"])
         self._follow(triggers, event["seq"], rng)
+
+    def _spell_mishap(self, event, rng):
+        """A Demon on a spell: the pack's magical mishap table is rolled ([magic] mishap), and what it says the
+        engine can do it does: a condition (effect `condition`), harm per power level (`hurt`), WP lost per
+        power level (`drain`). The rest is the GM's."""
+        cast, table = event["cast"], (self.system.get("magic") or {}).get("mishap")
+        if not table:
+            return
+        effect = self.table(table, rng=rng, cause=event["seq"]).get("effect") or {}
+        if effect.get("condition"):
+            held = self.state["pc"]["conditions"]
+            free = [c for c in self.system["conditions"] if c not in held]
+            chosen = effect["condition"] if effect["condition"] not in held else next(iter(free), None)
+            if chosen:
+                self._record("spell_effect", {"note": f"the mishap leaves {self.state['pc']['name']} {chosen}", "pc": {"conditions": {"add": [chosen]}}}, rng)
+        if effect.get("hurt"):
+            self._hurt(f"{cast['power']}{effect['hurt'].lstrip('1')}" if effect.get("per_level") else effect["hurt"], "a magical mishap", False, False, rng)
+        if effect.get("drain"):
+            lost = dice.roll(f"{cast['power']}{effect['drain'].lstrip('1')}" if effect.get("per_level") else effect["drain"], rng)["total"]
+            self._record("spell_effect", {"note": "the mishap drains willpower", "pc": {self.system["magic"].get("track", "wp"): f"-{lost}"}}, rng)
+
+    def _mishap(self, event, rng):
+        """A Demon on an attack is a miss, and the pack may add a mishap ([combat] demon = { melee = "<table>",
+        ranged = "<table>" }): the table is rolled, and what it says the engine can run it runs: the weapon
+        damaged (a bane on every use until it is repaired: `weapon = "damaged"` on the result), the hero
+        hitting themselves (`hurt = "self"`: the weapon's dice, no damage bonus). The rest is the GM's."""
+        if event.get("cast") and event["outcome"].get("demon"):
+            return self._spell_mishap(event, rng)
+        attack, tables = event.get("attack"), self.system.get("combat", {}).get("demon") or {}
+        if not (attack and event["outcome"].get("demon") and tables):
+            return
+        arm = combat.weapons(self.system)[attack["weapon"]]
+        table = tables.get("ranged" if arm["ranged"] else "melee")
+        if table:
+            effect = self.table(table, rng=rng, cause=event["seq"]).get("effect") or {}
+            if effect.get("weapon") == "damaged":
+                self.append("durability", weapon=arm["id"], label=arm["label"], how="mishap", damaged=True, broke=False, cause=event["seq"])
+            if effect.get("hurt") == "self":
+                self._hurt(arm["damage"], f"a blunder with the {arm['label'].lower()}", True, False, rng)
 
     def _odds_for(self, npc_id):
         return _ODDS[self._odds_step(npc_id)]
@@ -1739,8 +2299,12 @@ class Campaign:
         return triggers + self._time_triggers(before, before + changes.get("time", 0))
 
     def _time_triggers(self, before, after):
-        """time:<unit> once for every boundary of that unit crossed between two moments."""
-        return [f"time:{unit}" for unit, seconds in self.system["time"].items() for _ in range(int(after // seconds - before // seconds))]
+        """time:<unit> once for every boundary of that unit crossed between two moments, and `activity` once
+        when what happened took a stretch or more (the unit [threats] activity names): a search, a rest, a
+        shift of travel. A threat that advances on an activity moves one step for it, however long it took."""
+        triggers = [f"time:{unit}" for unit, seconds in self.system["time"].items() for _ in range(int(after // seconds - before // seconds))]
+        minimum = self.system["time"].get((self.system.get("threats") or {}).get("activity", "stretch"))
+        return triggers + ["activity"] * bool(minimum and after - before >= minimum)
 
     def _seconds(self, spent):
         """{ stretch = 2 } in seconds, in the system's own time units."""
@@ -2072,10 +2636,23 @@ class Campaign:
             elif key == "items":
                 result["items_add"] = _listed(value.get("add"))
                 result["items_remove"] = [i for i in _listed(value.get("remove")) if i in pc["items"]]
+            elif key in ("spells", "prepared"):
+                have = pc.get(key, [])
+                result[f"{key}_add"] = [a for a in _listed(value.get("add")) if a not in have]
+                result[f"{key}_remove"] = [a for a in _listed(value.get("remove")) if a in have]
             elif key == "abilities":
                 # What the hero has learned or lost: a heroic ability, an asset, or its upgrade ("Slayer, second ability").
-                result["abilities_add"] = [a for a in _listed(value.get("add")) if a not in pc["abilities"]]
+                # One that can be taken again and again (Robust) can be added again.
+                stacks = {slug(spec.get("name", aid)) for aid, spec in self.system.get("abilities", {}).items() if spec.get("stack")}
+                result["abilities_add"] = [a for a in _listed(value.get("add")) if a not in pc["abilities"] or slug(a) in stacks]
                 result["abilities_remove"] = [a for a in _listed(value.get("remove")) if a in pc["abilities"]]
+                warnings += [f"{a} {why}" for a in result["abilities_add"] for why in [self._unmet(a)] if why]
+                raised = Counter()
+                for a in result["abilities_add"]:
+                    spec = next((spec for aid, spec in self.system.get("abilities", {}).items() if slug(a) in (aid, slug(spec.get("name", aid)))), {})
+                    raised.update({track: int(n) for track, n in (spec.get("max") or {}).items()})
+                if raised:
+                    result["max_up"] = dict(raised)
                 warnings += [f"{i} isn't carried" for i in _listed(value.get("remove")) if i not in pc["items"]]
             else:
                 money = " (coins and gear are items: {\"pc\": {\"items\": {\"add\": [\"30 silver\"]}}})" if key in _MONEY else ""
@@ -2107,7 +2684,8 @@ def snapshot(system, state, adventure=None):
     packs (the weapons the hero carries, the codex, the route, the art), so they compute no
     rules. Nothing here is GM-only: unknown things are counted, never shown."""
     view = {**{k: v for k, v in state.items() if k not in _GM_ONLY}, "kit": combat.kit(system, state["pc"]) if state["pc"] else None,
-            "burn": burn_option(state)}
+            "load": combat.encumbrance(system, state["pc"]) if state["pc"] else None, "burn": burn_option(state),
+            "magic": magic.sheet(system, state["pc"]) if state["pc"] else None, "abilities": combat.powers(system, state["pc"]) if state["pc"] else []}
     if adventure is not None:
         # Counted, not listed: what they name would give the adventure away (`solo validate` says).
         view["pack_problems"] = len(packs.validate(system, adventure)) + len(state["problems"])
@@ -2447,6 +3025,10 @@ def initial_state(system, adventure):
         # 1-9: how likely surprises are. The GM raises it when the story runs away from the hero.
         "chaos": int(adventure.get("chaos", 5)),
         "combat": None,
+        # The shifts the hero has travelled on the day the game is in: {day, shifts}.
+        "travel": {"day": 0, "shifts": 0},
+        # A Dragon waiting for the player's choice: {of: the roll's seq, kind: attack or spell, options, target}.
+        "choice": None,
         # The player's table settings, read by the GM every session.
         "prefs": {"tone": "", "lines": [], "veils": []},
         # Set when the hero dies or the GM commits an "end".
@@ -2502,7 +3084,7 @@ def apply(state, event, adventure):
         return
     fight = state["combat"]
     if kind == "created":
-        state["pc"] = {**copy.deepcopy(event["pc"]), "marks": [], "dying": None, "dead": False}
+        state["pc"] = {**copy.deepcopy(event["pc"]), "marks": [], "dying": None, "dead": False, "damaged": {}}
         state["past"] = copy.deepcopy(event.get("past") or [])
         state["facts"].update(event.get("facts") or {})
         # Every hero keeps the unranked tracks (bonds); a hero carried from another campaign brings theirs.
@@ -2513,7 +3095,7 @@ def apply(state, event, adventure):
         old = state["pc"]
         state["heroes"].append({"name": old["name"], "info": old["info"], "fate": "died" if old["dead"] else "stepped aside",
                                 "fallen": state["fallen"]})
-        state["pc"] = {**copy.deepcopy(event["pc"]), "marks": [], "dying": None, "dead": False}
+        state["pc"] = {**copy.deepcopy(event["pc"]), "marks": [], "dying": None, "dead": False, "damaged": {}}
         state.update(ended=None, fallen=None, last_blow=None, last_check=None, voices=[])
         if event.get("npc") in state["npcs"]:
             state["npcs"][event["npc"]].update(fate="gone", location=None)
@@ -2529,6 +3111,21 @@ def apply(state, event, adventure):
         _apply_changes(state, event["changes"], event)
         state["last_check"] = event
         _mark(state, event)
+    elif kind == "journey":
+        _apply_changes(state, event["changes"], event)
+        state["travel"] = {"day": event["day"], "shifts": event["shifts"]}
+    elif kind in ("ability", "spell", "spell_effect", "prepare"):
+        _apply_changes(state, event["changes"], event)
+    elif kind == "learn":
+        _apply_changes(state, event["changes"], event)
+        if event.get("mark") in state["pc"]["marks"]:
+            state["pc"]["marks"].remove(event["mark"])
+    elif kind == "choice":
+        state["choice"] = {"of": event["of"], "kind": event.get("kind", "attack"), "options": event["options"], "target": event.get("target")}
+    elif kind == "dragon":
+        state["choice"] = None
+    elif kind == "heal" and fight:
+        fight["foes"][event["target"]].update(hp=event["hp"])
     elif kind == "act":
         state["last_check"] = event
         state["open_roll"] = event["seq"] if event.get("open") else None
@@ -2552,6 +3149,13 @@ def apply(state, event, adventure):
                     fight["incoming"] = None
                 fight["last"] = {"seq": event["seq"], "from": event.get("source"), "to": "pc", "hit": True, "dealt": event["dealt"], "text": describe(event)}
         _apply_changes(state, event["changes"], event)
+    elif kind == "durability":
+        if event["broke"]:
+            state["pc"].setdefault("damaged", {})[event["weapon"]] = "broken"
+        elif event.get("damaged"):
+            state["pc"].setdefault("damaged", {}).setdefault(event["weapon"], "damaged")
+    elif kind == "repair":
+        state["pc"].setdefault("damaged", {}).pop(event["weapon"], None)
     elif kind == "rally":
         if event["rallied"] and state["pc"]["dying"]:
             state["pc"]["dying"]["rallied"] = True
@@ -2570,6 +3174,7 @@ def apply(state, event, adventure):
         state["time"] += event.get("time") or 0
     elif kind == "fight_end":
         state["combat"] = None
+        state["choice"] = None
     elif kind == "damage" and fight:
         fight["foes"][event["target"]].update(hp=event["hp"], down=event["down"])
         fight["last"] = {"seq": event["seq"], "from": "pc", "to": event["target"], "hit": True, "dealt": event["dealt"], "text": describe(event)}
@@ -2584,6 +3189,7 @@ def apply(state, event, adventure):
         state["npcs"][event["npc"]]["met"] = True
     elif kind == "enemy" and fight:
         fight["incoming"] = event.get("incoming")
+        fight["foes"][event["foe"]]["last_attack"] = event.get("index")
         pending = fight.setdefault("pending", {})
         if event.get("queued"):
             pending[event["foe"]] = event["queued"]
@@ -2752,11 +3358,17 @@ def _apply_changes(state, changes, event):
         pc["tracks"][track]["value"] = value
     pc["conditions"] = [c for c in pc["conditions"] if c not in update.get("conditions_remove", [])]
     pc["conditions"] += [c for c in update.get("conditions_add", []) if c not in pc["conditions"]]
+    for track, more in update.get("max_up", {}).items():
+        # An ability that raises a track's ceiling (Robust: hit points) raises what the hero has by as much.
+        pc["tracks"][track]["max"] += more
+        pc["tracks"][track]["value"] += more
     for item in update.get("items_remove", []):
         if item in pc["items"]:
             pc["items"].remove(item)
     pc["items"] += update.get("items_add", [])
     pc["abilities"] = [a for a in pc["abilities"] if a not in update.get("abilities_remove", [])] + update.get("abilities_add", [])
+    for key in ("spells", "prepared"):
+        pc[key] = [a for a in pc.get(key, []) if a not in update.get(f"{key}_remove", [])] + update.get(f"{key}_add", [])
     if update.get("conditions_add") or update.get("conditions_remove"):
         _fit_momentum(state)
     state["time"] += changes.get("time", 0)
@@ -2926,7 +3538,9 @@ def describe(event):
         return text
     elif kind in ("check", "push"):
         attack, defend = event.get("attack"), event.get("defend")
-        purpose = f" (attack {attack['target']} with {attack['label']})" if attack else f" ({defend['how']})" if defend else ""
+        cast = event.get("cast")
+        purpose = (f" (attack {attack['target']} with {attack['label']})" if attack else f" ({defend['how']})" if defend
+                   else f" (casting {cast['name']}, power {cast['power']})" if cast else "")
         text = ("pushed " if kind == "push" else "") + f"{event['label']}{purpose}: {_outcome_text(event)}"
         return text + (_push_cost(event.get("changes") or {}) if kind == "push" else "")
     elif kind == "act":
@@ -2966,7 +3580,9 @@ def describe(event):
     elif kind == "damage" and event.get("immune"):
         return f"{event['weapon']} hits {event['name']}: no effect (only {event['immune']} can harm it)"
     elif kind == "damage":
-        text = f"{event['weapon']} hits {event['name']}: {event['roll']['total']} - armor {event['armor']} = {event['dealt']} damage"
+        how = {"counter": " (a counterattack)", "pierce": " (through the armor)"}.get(event.get("how"), "")
+        how += {"half": f" ({event.get('kind') or 'that'} damage is halved)", "immune": f" (immune to {event.get('kind') or 'that'})"}.get(event.get("resisted"), "")
+        text = f"{event['weapon']} hits {event['name']}{how}: {event['roll']['total']} - armor {event['armor']} = {event['dealt']} damage"
         return text + (", down!" if event["down"] else f", HP {event['hp']}")
     elif kind == "wound":
         if event.get("roll") is None:
@@ -2980,7 +3596,8 @@ def describe(event):
             text = f"{event['name']} attacks ({event['label']}, {outcome['result']} vs {outcome['target']}): {verdict}"
             return text + (f"; {event['incoming']['damage']} damage coming" if event.get("incoming") else "")
         text = f"{event['name']} ({event['total']}): {event['text']}"
-        return text.rstrip(". ") + (f" ({event['incoming']['damage']} damage coming)" if event.get("incoming") else "")
+        again = " (the same attack twice in a row, so the next on the table)" if event.get("again") else ""
+        return text.rstrip(". ") + again + (f" ({event['incoming']['damage']} damage coming)" if event.get("incoming") else "")
     elif kind == "ally":
         outcome = event["outcome"]
         verdict = "Dragon!" if outcome["dragon"] else "Demon!" if outcome["demon"] else "hits" if outcome["success"] else "misses"
@@ -2988,6 +3605,40 @@ def describe(event):
         if "dealt" in event:
             text += f"; {event['roll']['total']} - armor {event['armor']} = {event['dealt']} damage" + (", down!" if event["down"] else f", HP {event['hp']}")
         return text
+    elif kind == "journey":
+        return event["changes"]["note"] + (" (a forced march: Exhausted)" if event.get("forced") else "") + (f"; {event['left']} to go" if event["left"] else "; arrived")
+    elif kind == "spell":
+        body = f", {event['body']} drawn from the body" if event.get("body") else ""
+        metal = f" (metal at hand: {', '.join(event['metal'])}: the rules say magic fails around it)" if event.get("metal") else ""
+        return f"casts {event['name']} at power {event['power']} for {event['cost']} WP{body}{metal}"
+    elif kind == "spell_effect":
+        return event["changes"].get("note", "a spell's effect")
+    elif kind == "prepare":
+        return f"prepares {event['name']}" + (f", putting {event['dropped']} aside" if event.get("dropped") else "")
+    elif kind == "learn":
+        return (f"learns {event['name']}" if event.get("learned", True) else f"fails to learn {event['name']}")
+    elif kind == "ability":
+        paid = ", ".join(f"{n} {t.upper()}" for t, n in (event.get("cost") or {}).items())
+        return f"uses {event['name']}" + (f" (pays {paid})" if paid else "")
+    elif kind == "choice":
+        return f"a Dragon on the blow: choose {', '.join(event['options'])} (solo dragon <choice>)"
+    elif kind == "defence":
+        how = {"dodge": "dodges", "parry": "parries"}[event["how"]]
+        against = ", against a critical hit" if event.get("critical") else ""
+        return f"{event['name']} {how} ({event['outcome']['result']} vs {event['outcome']['target']}{against}): " + ("the blow is avoided" if event["avoided"] else "the blow lands")
+    elif kind == "heal":
+        return f"{event['name']} heals {event['hp'] - event['hp_was']} HP by {event['by']}: HP {event['hp']}"
+    elif kind == "dragon":
+        return {"double": "the Dragon doubles the damage", "attack": "the Dragon gives a second attack on another foe",
+                "pierce": "the Dragon finds a gap in the armor", "free": "the Dragon pays for the spell",
+                "another": "the Dragon lets the mage cast another spell at once, with a bane"}[event["choice"]]
+    elif kind == "durability" and event.get("damaged"):
+        return f"{event['label']} is damaged: a bane on every use until it is repaired"
+    elif kind == "durability":
+        how = {"parry": "takes the parried blow", "armor": "takes the blow the armor stopped"}[event["how"]]
+        return f"{event['label']} {how} ({event['expr']} = {event['damage']} against durability {event['durability']}): " + ("it breaks!" if event["broke"] else "it holds")
+    elif kind == "repair":
+        return f"{event['label']} is mended by {event['by'].lower() if event['by'][:1].isupper() and ' ' not in event['by'] else event['by']}"
     elif kind == "harm":
         sums = f"{event['roll']['total']} - armor {event['armor']} = " if event["armor"] else ""
         return f"{event['changes'].get('note', 'hit')}: {sums}{event['dealt']} damage"
@@ -3098,7 +3749,7 @@ def _outcome_text(event):
     if event.get("boons"):
         extras.append(f"boons {event['boons']}")
     if event.get("banes"):
-        extras.append(f"banes {event['banes']}")
+        extras.append(f"banes {event['banes']}" + (f" [{', '.join(event['gear_banes'])}]" if event.get("gear_banes") else ""))
     if "result" in outcome:
         verdict = "Dragon!" if outcome["dragon"] else "Demon!" if outcome["demon"] else "success" if outcome["success"] else "failure"
         text = f"{outcome['result']} vs {outcome['target']}, {verdict}"

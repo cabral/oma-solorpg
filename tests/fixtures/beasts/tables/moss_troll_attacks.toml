@@ -1,0 +1,7 @@
+name = "Moss troll attacks"
+formula = "1d6"
+results = [
+  { range = [1, 2], text = "It claws at you.", damage = "1d6" },
+  { range = [3, 4], text = "It bites at you.", damage = "1d8" },
+  { range = [5, 6], text = "It stomps on you.", damage = "2d4" },
+]

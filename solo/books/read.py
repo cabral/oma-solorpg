@@ -1,0 +1,31 @@
+"""What every recipe reads the same way: a value found in a section's text by a pattern made of the game's own terms
+(a dice expression, a count, a unit). A section that doesn't say it any more fails by name: that is a printing the
+recipe wasn't written for.
+"""
+
+import re
+
+from .. import SoloError
+
+_COUNTS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10, "twelve": 12, "twenty": 20}
+
+
+def find(section, pattern, what, flags=re.I | re.S, own=False):
+    """The match of `pattern` in a section's text, or an error saying which part of which book is not as the recipe expects."""
+    found = re.search(pattern, section.text(own=own), flags)
+    if found is None:
+        raise SoloError(f"{section.book.manifest.get('source', 'the book')}, {section.title!r} (p. {section.page}): can't find {what}; this may be another printing than the importer was written for")
+    return found
+
+
+def says(section, pattern):
+    return re.search(pattern, section.text(), re.I | re.S) is not None
+
+
+def count(word):
+    return int(word) if word.isdigit() else _COUNTS[word.lower()]
+
+
+def roll(text):
+    """Dice as the engine writes them: "D6" is 1d6, "2D6" 2d6."""
+    return re.sub(r"^D", "1d", text.strip(), flags=re.I).lower()

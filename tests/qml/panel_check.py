@@ -165,8 +165,9 @@ class FloatingWindow(QQuickItem):
 
 
 LAYER_SHELL = re.compile(r"^\s*(exclusionMode:.*|WlrLayershell\..*)$", re.M)
-# The sidebar is sized by its screen edges in the shell; here, by the test window.
+# The sidebar is sized by its screen edges in the shell; here, by the test window (taller to see all of the Table: PANEL_HEIGHT).
 EDGES = "anchors { top: true; right: true; bottom: true }"
+HEIGHT = int(os.environ.get("PANEL_HEIGHT", 1400))
 
 
 def main(out):
@@ -193,7 +194,7 @@ def main(out):
     plugin.mkdir()
     for name in ("book", "bin", "solo", "packs", "examples", "skills", "templates"):
         (plugin / name).symlink_to(REPO / name)
-    (plugin / "Panel.qml").write_text(LAYER_SHELL.sub("", (REPO / "Panel.qml").read_text()).replace(EDGES, "width: 360; height: 1400"))
+    (plugin / "Panel.qml").write_text(LAYER_SHELL.sub("", (REPO / "Panel.qml").read_text()).replace(EDGES, f"width: 360; height: {HEIGHT}"))
     shutil.copy(REPO / "BarWidget.qml", plugin / "BarWidget.qml")
     (work / "state" / "solo").mkdir(parents=True, exist_ok=True)
     (work / "state" / "solo" / "current").write_text(str(root) + "\n")
@@ -231,7 +232,7 @@ def main(out):
         while timer.isActive():
             app.processEvents()
 
-    panel = load("Panel.qml", 360, 1400)
+    panel = load("Panel.qml", 360, HEIGHT)
     bar = load("BarWidget.qml", 60, 30)
     if panel is None or bar is None:
         print("\n".join(errors))
@@ -255,6 +256,7 @@ def main(out):
     errors += desk_moments(item, panel, out, work, wait)
     errors += deleted_while_dying(item, bar, work, wait)
     errors += a_game_of_moves(item, panel, out, work, wait)
+    errors += magic_and_dragons(item, panel, out, work, wait)
     print("bar tooltip:", bar.rootObject().tooltip())
     print("launched:")
     for command in LAUNCHED:
@@ -423,6 +425,111 @@ def a_game_of_moves(item, panel, out, work, wait):
     if state()["last_check"].get("track") is None:
         problems.append(f"the Table's progress roll wasn't made: {item.property('error') or state()['last_check']}")
     panel.grabWindow().save(str(out / "table-ironsworn-vow.png"))
+    return problems
+
+
+def magic_and_dragons(item, panel, out, work, wait):
+    """A hero who casts and has heroic abilities, in a fight where a Dragon is the player's choice: the Table's buttons cast a
+    spell at a power level and prepare another, switch an ability on for a roll, answer a Dragon, and mend a broken weapon.
+    The made-up rules of tests/fixtures/dragons; the buttons only run `solo`, so what is checked is what the engine then holds."""
+    from helpers import DRAGONS, RED_TUSK, Dice
+    from solo import campaign
+    problems = []
+    sheet = work / "arcane.toml"
+    sheet.write_text('name = "Sibyl"\nitems = ["long_axe", "staff", "torch", "rope", "6 silver"]\n'
+                     'abilities = ["Heavy swing", "Quickdraw", "Mender", "Far gaze"]\n'
+                     'spells = ["Spark", "Ember", "Mend", "Ward", "Gale", "Lash"]\nprepared = ["Ember", "Mend", "Ward"]\n'
+                     '[info]\nkin = "Elf"\nprofession = "Mage"\nage = "Adult"\n'
+                     '[attributes]\nstr = 15\ncon = 12\nagl = 11\nint = 5\nwil = 13\ncha = 10\n'
+                     '[skills]\nelementalism = 12\nanimism = 10\naxes = 12\nevade = 12\n[tracks]\nhp = 12\nwp = 13\n')
+    game = work / "games" / "campaigns" / "arcane"
+    campaign.create(game, DRAGONS, RED_TUSK, sheet)
+    campaign.set_current(game)
+    with campaign.session(game) as c:
+        c.fight(["orc_leader", "cultist"], rng=Dice(1, 2, 3))
+    item.open(json.dumps({"view": "table"}))
+    wait(1500)
+
+    def state():
+        return json.loads((game / "state.json").read_text())
+
+    def wp():
+        return state()["pc"]["tracks"]["wp"]["value"]
+
+    sheet_view = state()
+    if [s["name"] for s in sheet_view["magic"]["spells"]] != ["Ember", "Gale", "Mend", "Ward", "Lash", "Spark"]:
+        problems.append(f"the spells aren't the hero's, spells before tricks: {sheet_view['magic']}")
+    if sorted(a["use"] for a in sheet_view["abilities"] if a["use"]) != ["alone", "attack", "rest", "round"]:
+        problems.append(f"the abilities aren't sorted into where they are asked for: {sheet_view['abilities']}")
+    panel.grabWindow().save(str(out / "table-magic.png"))
+
+    item.setProperty("power", 2)
+    item.cast(next(s for s in item.ready().toVariant() if s["name"] == "Ember"), False)
+    wait(1500)
+    cast = [e for e in state()["log"] if e["type"] == "spell"]
+    if item.property("error") or not cast or wp() != 7:
+        problems.append(f"the Table's cast didn't cost two levels of Ember: {item.property('error') or wp()}")
+    if item.property("power") != 1:
+        problems.append("the power level didn't go back to 1 after the cast")
+
+    item.toggleRider("Quickdraw")
+    item.act(["fight", "--round"] + list(item.useArgs("round", "").toVariant()), "fight", None)
+    wait(1500)
+    if item.property("error") or wp() != 5 or item.property("riders").toVariant() != ["Quickdraw"]:
+        problems.append(f"Quickdraw wasn't paid with the new round: {item.property('error') or wp()}")
+    item.spent("round", "")
+    if item.property("riders").toVariant() != []:
+        problems.append("a switched-on ability stayed on after the roll it was for")
+
+    item.prepare(next(s for s in item.grimoire().toVariant() if s["name"] == "Lash"))  # three are ready, the most there can be
+    wait(300)
+    if item.property("preparing") != "Lash":
+        problems.append("a spell to prepare at the limit didn't ask which to put aside")
+    panel.grabWindow().save(str(out / "table-magic-preparing.png"))
+    item.putAside(next(s for s in item.ready().toVariant() if s["name"] == "Ward"))
+    wait(1500)
+    if "Lash" not in state()["pc"]["prepared"] or "Ward" in state()["pc"]["prepared"]:
+        problems.append(f"the Table's prepare didn't swap the spells: {item.property('error') or state()['pc']['prepared']}")
+
+    with campaign.session(game) as c:
+        c.attack("cultist", weapon="long_axe", rng=Dice(1))  # a natural 1: a Dragon, which waits for the player
+    wait(1500)
+    if not state()["choice"]:
+        problems.append("a Dragon on the attack didn't wait for a choice")
+    options = [o["label"] for o in item.dragonOptions().toVariant()]
+    if "Double damage" not in options or not any(o.startswith("Attack ") for o in options):
+        problems.append(f"the Dragon's choices aren't offered, a free attack for the other foe included: {options}")
+    panel.grabWindow().save(str(out / "table-dragon-choice.png"))
+    item.act(["dragon", "double"], "dragon", None)
+    wait(1500)
+    if state()["choice"] or item.property("error"):
+        problems.append(f"the Dragon's choice wasn't answered: {item.property('error') or state()['choice']}")
+
+    with campaign.session(game) as c:
+        c.append("durability", weapon="long_axe", label="Long axe", how="parry", damaged=True, broke=True, cause=None)
+    wait(1500)
+    axe = next(w for w in state()["kit"]["weapons"] if w["id"] == "long_axe")
+    if axe["condition"] != "broken" or [w["id"] for w in item.worn().toVariant()] != ["long_axe"]:
+        problems.append(f"a broken weapon isn't shown as broken: {axe}")
+    panel.grabWindow().save(str(out / "table-broken-axe.png"))
+    item.act(["repair", "long_axe", "--artisan"], "gear", None)
+    wait(1500)
+    if state()["pc"].get("damaged") or item.property("error"):
+        problems.append(f"the Table's mend didn't mend it: {item.property('error') or state()['pc'].get('damaged')}")
+
+    item.act(["ability", "--cost", "2", "--", "Far gaze"], "ability", None)
+    wait(1500)
+    if item.property("error") or wp() != 3:
+        problems.append(f"an ability that costs what the hero chooses wasn't paid: {item.property('error') or wp()}")
+    with campaign.session(game) as c:
+        c.end_fight()
+    wait(1000)
+    item.toggleRider("Mender")
+    item.act(["rest", "stretch"] + list(item.useArgs("rest", "stretch").toVariant()), "rest", None)
+    wait(1500)
+    if item.property("error") or wp() != 1 and not any(e["type"] == "ability" for e in state()["log"]):
+        problems.append(f"Mender wasn't paid with the rest: {item.property('error') or wp()}")
+    panel.grabWindow().save(str(out / "table-magic-rested.png"))
     return problems
 
 

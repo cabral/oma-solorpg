@@ -1,0 +1,7 @@
+name = "Surge"
+school = "elementalism"
+rank = 2
+prerequisite = [["hex", "bolt"]]
+casting_time = "action"
+range = 10
+duration = "instant"

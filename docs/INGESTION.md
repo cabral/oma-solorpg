@@ -1,6 +1,6 @@
 # Ingesting content
 
-How books become packs the engine can run, what has been done so far, and what went wrong along the way. Written for the agent doing the next import. The formats are in [PACK_FORMAT.md](PACK_FORMAT.md); the step-by-step skills are `skills/solo-import` (adventures) and `skills/solo-rules-import` (rulebooks).
+How books become packs the engine can run, what has been done so far, and what went wrong along the way. Written for the agent doing the next import, and for whoever writes an importer. The formats are in [PACK_FORMAT.md](PACK_FORMAT.md); the step-by-step skills are `skills/solo-import` (adventures) and `skills/solo-rules-import` (rulebooks).
 
 ## What imports have taught the engine
 
@@ -18,6 +18,25 @@ Only The Red Tusk Hall, The Bell Under the Hill and Ironsworn's CC BY rules (bel
 | Ironsworn's moves, oracles and assets, from Datasworn's JSON (no book, and the one import whose result is committed) | A third mechanics family, `action-roll`: `solo act`, `burn` and `track`, momentum with a floor, a reset and impacts that lower them, progress tracks with ranks, an odds oracle, `moves/` and `assets/` in a pack, a stat array and constant tracks in creation, a `credit` on every generated rules page, and an importer that reads each object's license |
 | The same rulebook, from `make rules` to `make check` (Dragonbane's second printing) | `solo import table` reading a row number alone on its line, a price read back beside its item's name in the audit, short search words matching whole, a pack's own `checks/` run by `make check`, a `format` on every pack |
 | The solo booklet (v1.2) and three card decks (treasure, improvised weapons, adventure), each from its own PDF | `extends` as a list so each book is a pack that audits against its own pages, `make supplement`; `picture/` (what an agent reads off a card's art, which the audit reads and names); a table result's own `page`; the audit reading `choices`, numbers, an attack table's role columns and a dice multiplier (`2d6x10`) back; a lone hero's self-save recovering the rulebook's `[dying]` recovery |
+
+## Books with an importer: `solo import book`
+
+Dragonbane's own books have importers in `solo/books/`, so anyone with the PDFs gets the same packs without an agent: `make dragonbane BOOKS=~/Books/Dragonbane` (or `solo import book <pdf or folder>`). An importer ("recipe") is a Python module that knows one printing of one book:
+
+- It recognises the book by its bookmarks (`Book.fingerprint()`: a hash of their levels and titles, the same for every copy of a printing whatever a shop stamped on it; a deck of cards has none and is told by its page count and first card). A book it doesn't know, or another printing, is refused by name, with the section it couldn't find, and goes to an agent and the skills below.
+- It holds **where things are and how to read them**, never what they say. Each value is found in the section of the book that states it by a short pattern made of the game's own terms (a dice expression, a count, a unit); a section that no longer says it fails by name. No book text or number is in the repository: `tests/test_no_book_text.py` looks for any run of eight words of a book in any file, when the books are at hand (`SOLO_SOURCES` names a folder of extracts).
+- It writes the same pack an agent would (`system.toml`, `creation.toml`, `gear.toml`, `tables/`, `bestiary/`, `spells/`, `rules/`) and an `inventory.toml` that says where each thing came from, so `solo audit` checks the result against the book's pages exactly as it checks an agent's work. `solo import book` runs that audit and fails if the pack and the book disagree.
+
+How it reads, in the order it works (all of it stdlib; only `solo extract` needs PyMuPDF):
+
+1. `solo extract` also writes `layout/NNNN.json` (every line of every page with its place, typeface, size, colour and the words' positions) and `outline.json` (the bookmarks with where they point).
+2. `solo/sections.py` turns them into sections: a bookmark runs from where it points to the next, the bookmarks are a tree, and every line has an owner. Body text (the typeface most of the book is set in, or headings) goes to the last section that starts text; boxes, sidebars and table cells go to the last bookmark of any kind. Where the PDF's order of lines parts a heading from the words under it, or a table from its last row, geometry puts them back together. A big initial that is a drawing (so not in the text) is completed from the book's own vocabulary and said in a note; a hyphen at a line's end is joined or kept as the book writes the word elsewhere.
+3. `solo/books/dice.py` and `grid.py` read tables from where their cells sit: a roll table's rows by number (two columns side by side, a range, "18+", a number in a cell of its own, a long result that wraps, several dice read together as a sentence), a grid's rows by height and its cells by gap. `solo/books/pages.py` writes a rules page for each section with words of its own; `spelllist.py` reads spells; `cards.py` a deck.
+4. The recipe for each book is a package: `dragonbane_core/` (the core rules: gear, the numbers of every roll and fight, tables, character creation, the bestiary, heroic abilities, spells, rules pages), `dragonbane_magic/` (the Book of Magic), `dragonbane_cards/` (the three decks) and `dragonbane_solo/` (the solo booklet, laid over whichever of the others are there).
+
+To add a printing or a book: `solo extract` it, load it with `solo.sections.Book`, find its sections by title, and write a package like the ones above with a test on a made-up book (`tests/fake_book.py` builds one with the typefaces the real ones use, so no book is needed to run it). Where an importer had to choose (which of two weapons is a goblin's attack, which letter a big initial is), it says so in `pack.note`, and `solo compare` shows the result against a pack made another way.
+
+What an importer reads and what an agent still has to: everything printed as text. Art that carries words only as a picture can't be read this way; the adventures (scenes, people, clocks) need the judgment of an agent and the `solo-import` skill.
 
 ## A game that ships: Ironsworn from Datasworn
 

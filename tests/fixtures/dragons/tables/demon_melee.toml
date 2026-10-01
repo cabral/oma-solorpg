@@ -1,0 +1,8 @@
+name = "Demon in melee"
+formula = "1d6"
+results = [
+  { range = [1, 1], text = "You drop your weapon." },
+  { range = [2, 2], text = "You damage your weapon.", effect = { weapon = "damaged" } },
+  { range = [3, 3], text = "You hit yourself.", effect = { hurt = "self" } },
+  { range = [4, 6], text = "You stumble." },
+]

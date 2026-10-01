@@ -1,0 +1,7 @@
+name = "Ward"
+school = "animism"
+rank = 1
+power = false
+casting_time = "action"
+range = "personal"
+duration = "shift"

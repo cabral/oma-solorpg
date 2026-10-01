@@ -1,0 +1,10 @@
+name = "Moss troll"
+role = "A made-up monster that heals"
+attacks = "moss_troll_attacks"
+parries = true
+
+[stats]
+hp = 30
+armor = 0
+ferocity = 2
+regenerate = "1d4"

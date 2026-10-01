@@ -1,0 +1,8 @@
+name = "Spell mishaps"
+formula = "1d6"
+results = [
+  { range = [1, 1], text = "The magic leaves you dazed.", effect = { condition = "dazed" } },
+  { range = [2, 2], text = "The magic ravages your body.", effect = { hurt = "1d6", per_level = true } },
+  { range = [3, 3], text = "The spell drains your willpower.", effect = { drain = "1d4", per_level = true } },
+  { range = [4, 6], text = "Nothing more happens." },
+]

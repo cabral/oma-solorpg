@@ -67,7 +67,7 @@ def load_system(path):
     repository, and the bundled pack keeps its updates."""
     layers = _system_layers(Path(path))
     spec, creation_data, art, gear, skill_files = {}, {}, {}, {}, {}
-    tables, characters, bestiary, moves, assets = {}, {}, {}, {}, {}
+    tables, characters, bestiary, moves, assets, spells = {}, {}, {}, {}, {}, {}
     formats = []
     for root in layers:
         own = load_data(root / "system.toml")
@@ -83,6 +83,7 @@ def load_system(path):
         bestiary.update(_load_folder(root / "bestiary"))
         moves.update(_load_folder(root / "moves"))
         assets.update(_load_folder(root / "assets"))
+        spells.update(_load_folder(root / "spells"))
     root = layers[-1]
     skills = {}
     for source in (skill_files, spec.get("skills", {})):
@@ -93,6 +94,8 @@ def load_system(path):
                 "name": entry.get("name") or key.replace("_", " ").capitalize(),
                 # false for skills nobody can try without training (Dragonbane's magic schools)
                 "untrained": entry.get("untrained", True),
+                # a skill that is rolled as another one (Harmonism is rolled at PERFORMANCE)
+                **({"uses": slug(entry["uses"])} if entry.get("uses") else {}),
             }
     return {
         **spec,
@@ -122,6 +125,8 @@ def load_system(path):
         # assets they take, momentum's range and the progress tracks' ranks.
         "moves": dict(sorted(moves.items(), key=lambda entry: (entry[1].get("order", 0), entry[0]))),
         "assets": assets,
+        # Spells (spells/<id>.toml): what a hero can cast, with what each costs and does.
+        "spells": spells,
         "momentum": spec.get("momentum", {}),
         "progress": spec.get("progress", {}),
     }
@@ -329,7 +334,7 @@ def missing(system):
 
 def missing_text(system, gaps):
     return (f"{system['name']} has only its names so far. Its rules come from your own book: "
-            f"build them with `make rules BOOK=<your PDF>` (see the README). Missing: {', '.join(gaps)}")
+            f"build them with `make dragonbane BOOKS=<folder of your PDFs>` (see the README). Missing: {', '.join(gaps)}")
 
 
 def declared_formats(system=None, adventure=None):
@@ -468,7 +473,8 @@ def engine_rules(system):
         pages.append(("Threats", [
             f"A looming danger on a counter from {threats.get('start', 1)} to {threats.get('segments', 6)}: solo threat add \"<what happens when it triggers>\" [--recurring], or solo threat random.",
             "It advances on a significant delay, or an opening through inaction or failure (solo threat advance <id>); by two in dire straits, like a Demon on a task against time. "
-            "It advances by itself when the hero spends a stretch or more (searching, resting).",
+            + ("It advances by itself once for each activity of a stretch or more (a search, a rest): a shift's rest brings it one step, not one for every stretch in it."
+               if "activity" in threats.get("advance", []) else "It advances by itself when the hero spends a stretch or more (searching, resting)."),
             f"At {threats.get('segments', 6)} the danger comes to pass: face it head-on. A threat inherent to the mission or the place starts over (--recurring); any other is gone.",
             "Keep one active whenever the hero is delving somewhere dangerous."]))
     if system.get("search") or system.get("scavenge"):
@@ -487,6 +493,7 @@ def engine_rules(system):
             '{"npc": {"slime_bug": {"name": "Slime bug", "template": "minion", "attacker": "ranged"}}}, then solo fight slime_bug.',
             *lines, f"Attackers: {', '.join(npcs.get('attackers', []))}. On its turn (solo enemy) it rolls the NPC attack table in its column: an attack is a skill roll, anything else is yours to run.",
             "Monsters roll their own attack tables instead. NPCs and monsters may flee or surrender when a fight turns: ask the fortune chart."]))
+    pages += _play_pages(system)
     abilities = system.get("abilities", {})
     if abilities:
         lines = []
@@ -495,7 +502,11 @@ def engine_rules(system):
                 lines.append(f"- {spec.get('name')}: fighting alone, draw {spec['initiative']} initiative cards and keep them all: {spec['initiative']} turns a round.")
             if spec.get("push"):
                 lines.append(f"- {spec.get('name')}: adventuring alone, push a roll without a condition for {', '.join(f'{v} {t.upper()}' for t, v in spec['push'].items())} (solo push --sole-survivor).")
-        pages.append(("Heroic abilities", ["The heroic abilities the engine runs by itself.", *lines]))
+        lines += _ability_lines(abilities)
+        pages.append(("Abilities the engine runs", [
+            "The heroic abilities the engine runs by itself: paid for in the hero's points where it says, and used where they work. "
+            "Any other ability the hero has is the GM's to run from its rule page; pay for it with solo ability <name> [--cost n].", *lines],
+            ["heroic ability", "heroic abilities", "use an ability", "pay for an ability", "solo ability", "wp cost"]))
     if (system.get("dying") or {}).get("self_rally") or (system.get("rest", {}).get("stretch") or {}).get("tend"):
         pages.append(("Healing alone", [
             "During a stretch rest the hero can tend their own wounds: solo rest stretch --tend (a HEALING roll: more HP on a success).",
@@ -507,6 +518,95 @@ def engine_rules(system):
     pages += _price_pages(system) + _bestiary_pages(system)
     return [{"title": page[0], "text": f"# {page[0]}\n\n{note}\n\n" + "\n".join(page[1]) + "\n",
              **({"search": page[2]} if len(page) > 2 else {})} for page in pages] + _move_pages(system) + _asset_pages(system)
+
+
+def _ability_lines(abilities):
+    """One line for each heroic ability the engine runs beyond the solo ones: what it costs and where it is used."""
+    lines = []
+    for spec in abilities.values():
+        name, cost = spec.get("name"), spec.get("pay")
+        paid = "costs what the hero spends" if cost == "varies" else f"costs {', '.join(f'{v} {t.upper()}' for t, v in cost.items())}" if cost else "costs nothing"
+        if spec.get("max"):
+            lines.append(f"- {name}: raises {', '.join(f'{t.upper()} by {v}' for t, v in spec['max'].items())} when the hero takes it" + (" (and again each time it is taken)." if spec.get("stack") else "."))
+        if spec.get("extra_damage"):
+            where = " against monsters" if spec.get("against") == "monster" else " on an unarmed attack" if spec.get("weapon") == "unarmed" else " with a weapon held in two hands" if spec.get("grip") == 2 else ""
+            lines.append(f"- {name}: {spec['extra_damage']} more damage{where}; {paid}, when the blow hits: solo attack --use \"{name}\".")
+        if spec.get("initiative_pick"):
+            lines.append(f"- {name}: draw {spec['initiative_pick']} initiative cards and keep the better; {paid}: solo fight --round --use \"{name}\".")
+        if spec.get("initiative_keep"):
+            lines.append(f"- {name}: keep last round's initiative card; {paid}: solo fight --round --use \"{name}\".")
+        if spec.get("reaction"):
+            lines.append(f"- {name}: an extra {'parry' if spec['reaction'] == 'parry' else 'dodge'} that doesn't use the hero's turn; {paid}: solo defend {'parry' if spec['reaction'] == 'parry' else 'evade'} --use \"{name}\".")
+        if spec.get("boon") == "parry":
+            lines.append(f"- {name}: a boon on a parry with a {spec.get('weapon', 'weapon')}" + ("; a monster's blow that could not be parried can be" if spec.get("unparryable") else "")
+                         + f"; {paid}: solo defend parry --use \"{name}\".")
+        if spec.get("boon") == "journey":
+            lines.append(f"- {name}: a boon on the pathfinder's roll; {paid}: solo journey <km> --use \"{name}\".")
+        if spec.get("heal"):
+            lines.append(f"- {name}: {spec['heal']} more hit points on a {spec.get('rest', 'stretch')} rest; {paid}: solo rest {spec.get('rest', 'stretch')} --use \"{name}\".")
+    return lines
+
+
+def _play_pages(system):
+    """Pages for what a fight, a journey and a spell run on, worded from the pack's own numbers. A book's own page
+    of the same title replaces these."""
+    pages, weapons, fight = [], system.get("weapons", {}), system.get("combat", {})
+    lines = []
+    if any(w.get("str") for w in weapons.values()):
+        lines.append("A weapon that asks for more STR than the hero has is a bane on every attack and parry with it; one they have less than half the STR for can't be used.")
+    if any(w.get("range") for w in weapons.values()):
+        lines.append("solo attack <foe> --range <meters> says how far the foe is. A ranged weapon used from 2 meters or less, or from beyond its range up to twice it, gets a bane; "
+                     "farther than that, or a melee weapon beyond its reach, is refused. A thrown weapon reaches as many meters as the hero has STR (some twice as many). "
+                     "A bow or a crossbow needs a quiver among the hero's things.")
+    if any("banes" in g for g in system.get("gear", {}).values()):
+        lines.append("Armor and helmets worn put a bane on the rolls they hamper (and a helmet on ranged attacks, where it says so): the engine adds them, in the roll's line.")
+    if any(w.get("durability") for w in weapons.values()):
+        lines.append("A parry against a blow worse than the weapon's durability breaks the weapon until it is mended (solo repair <weapon>, a CRAFTING roll, or --artisan); "
+                     "a piercing blow never damages a parrying weapon; a melee blow the foe's armor stops entirely falls on the attacker's weapon instead.")
+    if fight.get("dragon") == "choice":
+        lines.append("A Dragon on the hero's attack waits for the player: solo dragon double (the weapon's dice twice), attack <foe> (a second attack on another foe that costs no turn), "
+                     "or pierce (armor doesn't count, a piercing weapon's). A Dragon on the attack of a foe makes it a critical hit: only a Dragon defends against it.")
+    if fight.get("parry_dragon") == "counter":
+        lines.append("A Dragon on a parry is a counterattack, an automatic hit that can't be avoided (not when the blow parried was itself a Dragon's, nor a shot).")
+    if fight.get("demon"):
+        lines.append("A Demon on an attack misses, can't be pushed, and rolls the pack's mishap table; what the table says the engine can run (the weapon damaged: a bane on every use until it is mended; the hero hurt by their own blow), it runs.")
+    if fight.get("monster_repeat"):
+        lines.append("A monster doesn't use one attack on two turns running: when its roll repeats the last, the next attack on its table is the one.")
+    if any(m.get("stats", {}).get(k) for m in system.get("bestiary", {}).values() for k in ("resist", "immune_to", "regenerate", "drain")):
+        lines.append("A monster may resist a kind of damage (half of what gets past its armor, rounded up) or be immune to it (solo attack --type slashing|piercing for a weapon that does either; "
+                     "solo wound <foe> <dice> --why ... --kind fire|magic for other harm), heal on each of its turns (regeneration) or by the harm it does (draining).")
+    if fight.get("monster_defense"):
+        lines.append(f"A foe can dodge or parry a blow, which uses one of its actions that round: solo attack <foe> --defended dodge|parry. A monster rolls against {fight['monster_defense']}, "
+                     "and only one that carries a weapon parries; anyone else rolls their own EVADE or weapon skill (5 if the stat block has none). Against a critical hit only a Dragon avoids the blow.")
+    if lines:
+        pages.append(("Gear, Dragons and monsters in a fight", lines, ["durability", "break", "repair", "banes", "range", "thrown", "quiver", "critical hit", "counterattack", "resistance", "regeneration", "dodge", "parry"]))
+    load = system.get("encumbrance")
+    if load:
+        carriers = ", ".join(f"a {item} adds {more}" for item, more in load.get("carriers", {}).items())
+        pages.append(("Load the hero carries", [
+            f"Capacity is the hero's {load.get('attribute', 'str').upper()} over {load.get('divisor', 2)}, rounded up" + (f"; {carriers}" if carriers else "") + ". What the price lists weigh counts; an item they don't list weighs 1; "
+            f"armor worn and up to {load.get('at_hand', 3)} weapons at hand don't count; something that weighs nothing is tiny; coins count one item for every {load.get('coins', 100)}. "
+            "The scene's Character section says the load, and when it is over. An over-encumbered hero makes a roll to move (the rules page has it)."], ["encumbrance", "carrying", "weight", "over-encumbered"]))
+    journey = system.get("journey")
+    if journey:
+        pages.append(("Travel with solo journey", [
+            f"solo journey <km> [--mounted] [--road] [--difficult] [--use <ability>]: a shift of travel covers {journey['foot']} kilometers on foot and {journey['mounted']} mounted. "
+            f"A hero walks {journey.get('travel_shifts', 2)} shifts a day; one more is a forced march and leaves them Exhausted; never more.",
+            f"Off a road, each shift the pathfinder (the hero) rolls {journey.get('skill', 'bushcraft').upper()}: a bane with no map or in difficult terrain, a boon with a spyglass. "
+            "A Dragon doubles the ground that shift; a failure is a mishap from the pack's table, and the engine takes what it says about the ground (half, none); a mishap the GM has to run stops the journey: "
+            "solo journey again with what is left.",
+            "solo camp: the roll to find a place to rest in the wild (a bane without a sleeping fur, a boon with a tent); a success lets the shift be a rest (solo rest shift)."],
+            ["travel", "journey", "kilometers", "pathfinder", "forced march", "camp", "making camp"]))
+    if system.get("magic"):
+        rules = system["magic"]
+        pages.append(("Casting spells with solo cast", [
+            f"solo cast <spell> [--power 1..{rules.get('max_power', 3)}] [--target <foe>]...: a spell costs {rules.get('cost', 2)} {rules.get('track', 'wp').upper()} a power level (a trick {rules.get('trick_cost', 1)}, and always works), "
+            "paid whatever comes of it; then the school is rolled. On a success the engine does what the spell's data says (damage, healing); the rest is the GM's, from the spell's rule page.",
+            "The hero must know the spell and have it prepared, or cast it from the grimoire (--grimoire: twice as long, and not for a reaction spell). solo prepare <spell> [--drop <spell>] keeps to the limit; solo learn <spell> [--from teacher|grimoire] takes a mark for the school and a roll.",
+            "With almost no points left a hero can draw power from the body (--body d6): that many points to spend at once, and as much harm, and not for healing. "
+            "A Dragon on a spell waits for the player (solo dragon double|free|another); a Demon can't be pushed and rolls the mishap table."],
+            ["spell", "spells", "cast", "magic", "power level", "grimoire", "prepare", "mishap"]))
+    return pages
 
 
 def _action_pages(system):
@@ -630,9 +730,14 @@ def _price_line(system, item_id, item):
     extras = [f"{k} {item[k]}" for k in ("weight", "supply") if item.get(k) not in (None, "")]
     weapon, armor = system.get("weapons", {}).get(item_id), system.get("armor", {}).get(item_id)
     if weapon:
-        extras.append(f"{weapon.get('skill', '?')}, {weapon.get('damage', '?')} damage")
+        stats = [f"{weapon.get('skill', '?')}, {weapon.get('damage', '?')} damage"]
+        stats += [f"{weapon['grip']}H"] if weapon.get("grip") else []
+        stats += [f"STR {weapon['str']}"] if weapon.get("str") else []
+        stats += [f"range {weapon['range']}"] if weapon.get("range") else []
+        stats += [f"durability {weapon['durability']}"] if weapon.get("durability") else []
+        extras.append(", ".join(stats) + (f"; {', '.join(f.replace('_', ' ') for f in weapon['features'])}" if weapon.get("features") else ""))
     if armor is not None:
-        extras.append(f"armor {armor}")
+        extras.append(f"armor {armor}" + (f"; bane on {', '.join(b.replace('_', ' ') for b in item['banes'])}" if item.get("banes") else ""))
     note = f". {item['note']}" if item.get("note") else ""
     return f"- {item.get('name', item_id)}: {item.get('price', '?')}" + (f" ({'; '.join(extras)})" if extras else "") + note
 
@@ -923,6 +1028,7 @@ def _validate_system(system):
         if rest.get("limit") and rest["limit"] not in system["time"]:
             problems.append(f"{where}: limit must be a time unit ({', '.join(system['time']) or 'none'})")
     problems += _validate_combat(system)
+    problems += _validate_play(system)
     for source, spec in system.get("light", {}).items():
         where = f"system: light {source}"
         problems += [f"{where} lasts an unknown time unit {u}" for u in spec.get("lasts", {"shift": 1}) if u not in system["time"]]
@@ -1034,6 +1140,106 @@ def _validate_combat(system):
         if weapon.get("damage"):
             problems += _validate_dice(f"system: weapon {key} damage", weapon["damage"])
     problems += [f"system: armor {key} must be a whole number" for key, rating in system.get("armor", {}).items() if not isinstance(rating, int)]
+    return problems
+
+
+def _is_count(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def _validate_play(system):
+    """What a fight, a journey and a spell run on beyond the basics: the weapon tables' stats, how a Dragon and a
+    Demon play in a fight, a hero's load, what armor hampers, the journey rules, magic, spells, heroic abilities
+    and what a monster resists. All optional; each says what is wrong with itself."""
+    problems, skills, tracks, tables = [], system["skills"], system["tracks"], system["tables"]
+    attributes, fight = system["attributes"], system.get("combat", {})
+    for key, weapon in system.get("weapons", {}).items():
+        where = f"system: weapon {key}"
+        if "grip" in weapon and weapon["grip"] not in (1, 2):
+            problems.append(f"{where}: grip is 1 or 2 hands")
+        problems += [f"{where}: {field} is a whole number above 0" for field in ("str", "durability") if field in weapon and not _is_count(weapon[field])]
+        if "range" in weapon and not (_is_count(weapon["range"]) or weapon["range"] in ("str", "str*2")):
+            problems.append(f"{where}: range is meters, or \"str\" or \"str*2\" for a thrown weapon")
+        if "features" in weapon and not (isinstance(weapon["features"], list) and all(isinstance(f, str) for f in weapon["features"])):
+            problems.append(f"{where}: features is a list of words (piercing, slashing, thrown ...)")
+    if fight.get("dragon") not in (None, "double", "choice"):
+        problems.append('system: combat dragon is "double" or "choice"')
+    if fight.get("parry_dragon") not in (None, "counter"):
+        problems.append('system: combat parry_dragon is "counter"')
+    if fight.get("monster_repeat") not in (None, "next"):
+        problems.append('system: combat monster_repeat is "next"')
+    if "monster_defense" in fight and not _is_count(fight["monster_defense"]):
+        problems.append("system: combat monster_defense is a skill level")
+    if fight.get("repair") and slug(fight["repair"]) not in skills:
+        problems.append(f"system: combat repair skill {fight['repair']} isn't a skill")
+    problems += [f"system: combat demon {kind} rolls unknown table {table}" for kind, table in (fight.get("demon") or {}).items() if table not in tables]
+    load = system.get("encumbrance")
+    if load:
+        if load.get("attribute", "str") not in attributes:
+            problems.append(f"system: encumbrance attribute {load.get('attribute', 'str')} isn't an attribute")
+        problems += [f"system: encumbrance {field} is a whole number above 0" for field in ("divisor", "at_hand", "coins") if field in load and not _is_count(load[field])]
+        problems += [f"system: encumbrance carrier {item} adds a whole number" for item, more in load.get("carriers", {}).items() if not isinstance(more, int)]
+    for item, entry in system.get("gear", {}).items():
+        if isinstance(entry, dict):
+            problems += [f"gear {item}: banes names {b}, which isn't a skill (or ranged_attack)" for b in entry.get("banes", []) if b not in skills and b != "ranged_attack"]
+            if "weight" in entry and not (isinstance(entry["weight"], (int, float)) and entry["weight"] >= 0):
+                problems.append(f"gear {item}: weight is a number, 0 for something that weighs nothing")
+    journey = system.get("journey")
+    if journey:
+        problems += [f"system: journey {field} is kilometers a shift, a whole number above 0" for field in ("foot", "mounted") if not _is_count(journey.get(field))]
+        if journey.get("skill", "bushcraft") not in skills:
+            problems.append(f"system: journey skill {journey.get('skill', 'bushcraft')} isn't a skill")
+        if journey.get("mishaps") and journey["mishaps"] not in tables:
+            problems.append(f"system: journey mishaps rolls unknown table {journey['mishaps']}")
+        if "shift" not in system["time"]:
+            problems.append("system: a journey goes by the shift, and [time] has none")
+    activity = (system.get("threats") or {}).get("activity")
+    if activity and activity not in system["time"]:
+        problems.append(f"system: threats activity {activity} isn't a time unit")
+    rules = system.get("magic")
+    if rules:
+        if rules.get("track", "wp") not in tracks:
+            problems.append(f"system: magic track {rules.get('track', 'wp')} isn't a track")
+        if rules.get("mishap") and rules["mishap"] not in tables:
+            problems.append(f"system: magic mishap rolls unknown table {rules['mishap']}")
+        problems += [p for die in rules.get("body", []) for p in _validate_dice("system: magic body", die)]
+        problems += [f"system: magic dragon option {o} is double, free or another" for o in rules.get("dragon", []) if o not in ("double", "free", "another")]
+        problems += [f"system: magic learn {how} rolls unknown skill {spec.get('roll')}" for how, spec in rules.get("learn", {}).items() if slug(spec.get("roll", "")) not in skills and spec.get("roll") not in attributes]
+    for spell_id, spell in system.get("spells", {}).items():
+        where = f"spell {spell_id}"
+        if not rules:
+            problems.append(f"{where}: the system has spells and no [magic] rules")
+            break
+        if spell.get("school") not in skills and spell.get("school") != "general":
+            problems.append(f"{where}: school {spell.get('school')} isn't a skill (or general)")
+        for field in ("damage", "heal"):
+            problems += _validate_dice(f"{where} {field}", spell[field]) if spell.get(field) else []
+        problems += [p for expr in spell.get("chain", []) for p in _validate_dice(f"{where} chain", expr)]
+        more = spell.get("per_level")
+        if more and not (isinstance(more, dict) and (_is_count(more.get("dice")) or (more.get("add") and not _validate_dice("", more["add"])))):
+            problems.append(f"{where}: per_level is {{ dice = 1 }} (a die more of each kind) or {{ add = \"1d6\" }}")
+        problems += [f"{where}: avoid names {a}, which is dodge or parry" for a in spell.get("avoid", []) if a not in ("dodge", "parry")]
+    for ability_id, ability in system.get("abilities", {}).items():
+        where = f"system: ability {ability_id}"
+        pay = ability.get("pay", {})
+        if pay != "varies":
+            problems += [f"{where} pays with unknown track {t}" for t in pay if t not in tracks]
+        problems += [f"{where} raises unknown track {t}" for t in ability.get("max", {}) if t not in tracks]
+        if ability.get("extra_damage"):
+            problems += _validate_dice(f"{where} extra_damage", ability["extra_damage"])
+        if ability.get("heal"):
+            problems += _validate_dice(f"{where} heal", ability["heal"])
+        need = ability.get("requires") or {}
+        problems += [f"{where} requires unknown skill {k}" for k in need.get("skills", []) if k not in skills]
+        if need.get("kind") and need["kind"] not in ("weapon", "melee", "str_melee", "magic"):
+            problems.append(f"{where}: requires kind is weapon, melee, str_melee or magic")
+    for monster_id, monster in system.get("bestiary", {}).items():
+        stats = monster.get("stats", {})
+        if stats.get("regenerate"):
+            problems += _validate_dice(f"bestiary {monster_id} regenerate", str(stats["regenerate"]))
+        for field in ("resist", "immune_to"):
+            if field in stats and not isinstance(stats[field], (str, list)):
+                problems.append(f"bestiary {monster_id}: {field} is a kind of damage or a list of them (slashing, piercing, bludgeoning, physical, fire, magic)")
     return problems
 
 

@@ -73,6 +73,8 @@ _DOING = {
     "defend": "rolling the dice", "death-roll": "rolling the dice", "rally": "rolling the dice", "advance": "rolling the dice",
     "commit": "writing it down", "threat": "writing it down", "search": "rolling the dice", "scavenge": "rolling the dice", "move": "writing it down", "fight": "writing it down", "rest": "writing it down",
     "light": "writing it down", "mark": "writing it down", "track": "writing it down", "say": "writing it down",
+    "dragon": "rolling the dice", "cast": "casting a spell", "journey": "travelling", "camp": "rolling the dice", "repair": "rolling the dice",
+    "ability": "writing it down", "prepare": "writing it down", "learn": "rolling the dice",
 }
 
 

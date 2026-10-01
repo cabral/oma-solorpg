@@ -10,6 +10,7 @@ creation.toml    character creation tables
 gear.toml        coins and price lists (below)
 characters/      pre-made heroes (<id>.toml)
 bestiary/        monsters any adventure can use (<id>.toml, below)
+spells/          spells a hero can cast (<id>.toml, below)
 moves/           action-roll games: the moves a hero can make (<id>.toml, below)
 assets/          action-roll games: what a hero can take (<id>.toml, below)
 art.toml         the hero's portrait parts and generic figures
@@ -42,19 +43,22 @@ A pack can be laid over another: `extends = "dragonbane"` in `system.toml` (a fo
 | `[light.<id>]` | `label`, `item` (carried item used up), `lasts = { unit = n }` |
 | `[dying]` | `track`, `roll` (attribute or skill), `rally`, `die` (counts), `recover`; `self_rally = { skill }` (`solo rally`), `self_save = { skill, recover }` (`solo death-roll --heal`; `recover` is `[dying]`'s own when it isn't given) |
 | `[advancement]` | `mark_on = ["dragon", "demon"]`, `roll`, `max` |
-| `[combat]` | `initiative` (cards), `dragon = "double"`, `evade` (skill), `track`, `unarmed = { label, skill, damage, bonus }`, `monster_parry` (can monster attacks be parried by default), `[combat.damage_bonus]` `attribute = [[top, "dice"], ...]` |
-| `[weapons.<id>]` | `label`, `skill`, `damage`, `bonus` (attribute), `parry = false`, `attack = false`; matched to carried items by slug |
+| `[combat]` | `initiative` (cards), `dragon` (`"double"`: a Dragon on an attack rolls the weapon's dice twice; `"choice"`: the player chooses, see [Dragons in a fight](#dragons-in-a-fight)), `parry_dragon = "counter"` (a Dragon on a parry strikes back), `demon = { melee = "<table>", ranged = "<table>" }` (the mishap a Demon on an attack rolls), `evade` (skill), `track`, `unarmed = { label, skill, damage, bonus }`, `monster_parry` (can monster attacks be parried by default), `monster_repeat = "next"` (a monster never repeats its last attack: the next on the table), `monster_defense` (the skill level a monster dodges and parries at), `repair` (the skill that mends a broken weapon), `[combat.damage_bonus]` `attribute = [[top, "dice"], ...]` |
+| `[weapons.<id>]` | `label`, `skill`, `damage`, `bonus` (attribute), `parry = false`, `attack = false`; matched to carried items by slug. From a book's weapon tables: `grip` (1 or 2 hands), `str` (the STR it asks for: a bane below it, unusable below half), `range` (meters; `"str"` or `"str*2"` for a thrown weapon), `durability` (the most a parry can take), `features` (`piercing`, `slashing`, `bludgeoning`, `subtle`, `long`, `toppling`, `thrown`, `requires_quiver`, `shield` ...), `ranged = true` |
 | `[armor]` | `item_id = rating` |
-| `[skills]` | `id = "attribute"` or `{ attribute, name, untrained = false }` |
+| `[encumbrance]` | `attribute`, `divisor` (capacity is the attribute over it, rounded up), `at_hand` (weapons that aren't counted), `coins` (coins to an item), `carriers = { backpack = 2 }` (what adds to the capacity); the weights come from `gear.toml` |
+| `[journey]` | `foot`, `mounted` (kilometers a shift), `shifts_per_day`, `travel_shifts` (a day's walking: one more is a forced march), `skill` (the pathfinder's), `mishaps` (the table a failed roll rolls), `camp = { skill, needs, helps }` (making camp: the item whose lack is a bane, the one that gives a boon) |
+| `[magic]` | `cost` (per power level), `max_power`, `trick_cost`, `track` (what a spell costs), `body` (dice a hero may draw power from the body with) and `body_below` (only with this many points or fewer), `prepared` (the attribute whose base chance is how many spells can be held ready), `mishap` (the table a Demon on a spell rolls), `dragon` (the choices a Dragon on a spell gives: `double`, `free`, `another`), `trick_time`, `learn = { teacher = { roll, boons }, grimoire = { roll } }` |
+| `[skills]` | `id = "attribute"` or `{ attribute, name, untrained = false, uses = "<skill>" }` (`uses`: this skill is rolled as another, at that one's level: Harmonism is PERFORMANCE) |
 | `[oracle]` | `chart = "fortune"` (the fortune chart replaces the likelihood oracle) or `"odds"` (a d100 against the chance of a yes at each of five odds: `[oracle.odds]` `"50/50" = 50`, one level at 50; a double is a twist), `scene_checks = false`, `inspiration = [table ids]` for `--meaning`, `[oracle.fortune]` with `bands` and one list per column |
 | `[momentum]` | `action-roll`: `min` (below 0), `max`, `reset`. Momentum is a track (`[tracks]` names it) that may go below zero; each impact the hero has takes one off its ceiling and its reset (never below 0) |
 | `[progress]` | `action-roll`: `boxes` and `ticks` (a track's length and a box's), `[progress.ranks]` (`rank = ticks one mark fills`), `kinds = { vow = "Vow" }` (the tracks a game keeps, started with `solo track add`), `unranked = { bonds = "Bonds" }` (tracks every hero has from the start, with no rank: a mark is one tick) |
 | `[effects]` | `dragon`, `demon`: tables rolled on a Dragon or Demon outside a fight |
-| `[threats]` | `segments`, `start`, `advance` (triggers), `table` (random threats) |
+| `[threats]` | `segments`, `start`, `advance` (triggers: `time:stretch` moves it for every stretch that passes; `activity` once for each command that took a stretch or more), `activity` (the time unit that counts as an activity, `stretch` by default), `table` (random threats) |
 | `[search]` | `skill`, `table`, `time` |
 | `[scavenge]` | `table`, `again_time` |
 | `[npcs]` | `attacks` (the NPC attack table), `attackers` (role columns), `[npcs.templates.<id>]` with `hp`, `armor`, `damage`, `skill`, `other`, `movement`, `attributes` |
-| `[abilities.<id>]` | Heroic abilities the engine runs: `name`, and `initiative = n` (cards drawn) or `push = { track = n }` (pay instead of a condition) |
+| `[abilities.<id>]` | Heroic abilities the engine runs: `name`, and what they do: `initiative = n` (cards drawn and kept), `initiative_pick = n` (draw this many, keep the best), `initiative_keep` (keep last round's card), `push = { track = n }` (pay instead of a condition), `max = { hp = 2 }` (raise a track's ceiling when taken) with `stack = true` (it can be taken again), `extra_damage = "1d8"` (added to a blow that hits; `against = "monster"`, `weapon = "unarmed"`, `grip = 2`, `melee = true` say for which), `reaction = "parry"` or `"dodge"` (an extra one that costs no turn), `boon = "parry"` (with `weapon = "shield"`, and `unparryable = true` for a monster's blow) or `"journey"`, `heal = "1d6"` with `rest = "stretch"` (more HP on that rest). `pay = { wp = 3 }` (or `"varies"`) is the cost; `requires = { skills = [...], level = 12 }` or `{ kind = "weapon" \| "melee" \| "str_melee" \| "magic", level = 12 }` a skill level a hero needs (a commit that adds one the hero doesn't meet comes back with a warning) |
 | `[foundry]` | Where a Foundry actor keeps values, for the character importer |
 
 ### `gear.toml`
@@ -68,8 +72,10 @@ aliases = { gc = "gold", sc = "silver" }           # optional: abbreviations the
 name = "Rope, 10 meters"
 category = "Equipment"          # the book's heading: a page per category in `solo rule prices <category>`
 price = "1 silver"              # as the book writes it: "1 gold 5 silver", "3 gold coins", "12 sc", a number in the smallest coin, or "varies"
-weight = 1                      # optional, in the book's own unit
+weight = 1                      # optional, in the book's own unit (0: tiny, it counts for nothing; 0.25 a quarter)
 supply = "common"               # optional: how easy it is to find
+banes = ["evade", "sneaking"]   # optional, armor and helmets: the skills it puts a bane on (ranged_attack: all ranged attacks)
+metal = true                    # optional: something magic can't be cast around (said at a cast; the GM rules)
 note = ""                       # optional, short, in your words
 source = "p. 58"
 ```
@@ -99,7 +105,11 @@ The moves of an `action-roll` game, by id (`solo act <id>`); the folder is read 
 
 ### Bestiary: `bestiary/<id>.toml`
 
-A monster as an adventure's NPC profile has it: `name`, `role`, `description`, `[stats]` (`hp`, `armor`, `ferocity`, `immune`), `attacks = "<table>"` (its attack table, in the pack's `tables/`) or `[attack]` and `[skills]`. An adventure's NPC becomes one with `monster = "<id>"`, its own keys laid over the monster's (a name, secrets, more hit points); in play the GM commits one (`{"npc": {"wolf_1": {"name": "Wolf", "monster": "wolf"}}}`). `solo rule bestiary` lists them. Whether a kind of foe is met again and again (`many`) is the adventure's to say, not the bestiary's.
+A monster as an adventure's NPC profile has it: `name`, `role`, `description`, `[stats]` (`hp`, `armor`, `ferocity`, `immune`, and what it resists: `resist = ["piercing"]` halves that kind of damage after armor, rounded up, and `physical` covers every weapon; `immune_to = [...]` takes none of it; `regenerate = "1d6"` heals that much on each of its turns; `drain = true` heals it by the harm it does), `attacks = "<table>"` (its attack table, in the pack's `tables/`) or `[attack]` and `[skills]`, and `parries = true` for a monster that carries a weapon and can parry. An adventure's NPC becomes one with `monster = "<id>"`, its own keys laid over the monster's (a name, secrets, more hit points); in play the GM commits one (`{"npc": {"wolf_1": {"name": "Wolf", "monster": "wolf"}}}`). `solo rule bestiary` lists them. Whether a kind of foe is met again and again (`many`) is the adventure's to say, not the bestiary's.
+
+### Spells: `spells/<id>.toml`
+
+`name`, `school` (a skill, or `general`: any school the hero is trained in), `rank`, `prerequisite` (a school or other spells; each entry is needed, and an entry that is itself a list is one of them: `[["protector", "dispel"]]`), `requirement` (`word`, `gesture`, `focus`, `ingredient`), `casting_time` (`action`, `reaction`, `stretch`, `shift`), `range` (meters, `touch` or `personal`), `area` (`sphere`, `cone`), `duration`, `trick = true` (a magic trick: always ready, costs one point and never fails), `power = false` (no power levels: it costs one level's worth), `source`. What the engine runs of it: `damage` (dice, rolled on a success), `chain` (the dice the foes it goes on to take, in order), `heal`, `per_level` (`{ dice = 1 }`: each level past the first adds a die of each kind; `{ add = "1d6" }`: other dice), `kind` (the damage's kind for a foe's resistance: `fire`, `magic`), `armor = false` (armor doesn't count), `avoid = ["dodge", "parry"]` (how a foe can avoid it). The spell's words are a rules page (`rules/spell_<id>.md`) for `solo rule`; everything else about it the GM runs from that.
 
 ### `creation.toml`
 
@@ -107,11 +117,11 @@ Top level: `attributes` (dice per attribute, or a list of numbers dealt out acro
 
 `[names]`: `<option id> = [names]`, a list of hero names for a kin (or any option) without `names` of its own; `any` for a hero with no options. The bundled Dragonbane pack has one per kin.
 
-`[choose.<table>]`: `label`, `roll` (dice), and `[choose.<table>.options.<id>]` with `label`, `range`, `attributes` (modifiers), `key` (key attribute), `skills` and `train` (how many trained), `always`, `extra`, `abilities`, `ratings`, `names`, `gear` (text; `{1d8}` rolls), `kits` (one picked), `then` (a follow-up table).
+`[choose.<table>]`: `label`, `roll` (dice), and `[choose.<table>.options.<id>]` with `label`, `range`, `attributes` (modifiers), `key` (key attribute), `skills` and `train` (how many trained), `always`, `extra`, `abilities`, `ratings`, `names`, `gear` (text; `{1d8}` rolls), `kits` (one picked), `then` (a follow-up table), `spells = { count, rank, tricks }` (a new mage's picks: so many spells of that rank and so many magic tricks, from their school and general magic, known and held ready as far as the hero can).
 
 ### Characters: `characters/<id>.toml` (system or adventure)
 
-`name`, `info` (kin, profession, age...), `[attributes]`, `[skills]` (value; listed means trained), `[tracks]` (max or `{ value, max }`), `conditions`, `items`, `abilities`, `[ratings]`. In an adventure, `replacement = true` keeps a hero off the start screen for `solo hero` after a death.
+`name`, `info` (kin, profession, age...), `[attributes]`, `[skills]` (value; listed means trained), `[tracks]` (max or `{ value, max }`), `conditions`, `items`, `abilities`, `[ratings]`, and for a mage `spells` (what they know, tricks among them) and `prepared` (the ones held ready). In an adventure, `replacement = true` keeps a hero off the start screen for `solo hero` after a death.
 
 ### `art.toml` (system)
 
@@ -170,7 +180,8 @@ What a roll decided cites it anywhere in the pack's files, most often in a `sour
 
 `name`, `formula` (dice; `@track` reads a track), `parry` (default for a monster table), `results = [...]`, each with `range = [low, high]`, `text`, and optionally:
 
-- `damage`, `defend = false`, `parry = true`, `armor = false`: a monster attack
+- `damage`, `defend = false`, `parry = true`, `armor = false`: a monster attack; `kind = "piercing"` says what kind of damage it does (a piercing blow never damages a weapon that parries it)
+- `effect = { ... }`: what the engine runs when the table is a Demon's mishap: `weapon = "damaged"`, `hurt = "self"` (a fight), `condition = "dazed"`, `hurt = "1d6", per_level = true`, `drain = "1d6", per_level = true` (a spell); a journey mishap: `distance = "half"` or `"none"` (the ground lost that shift), `gm = true` (the journey stops for the GM)
 - `roll = "2d6x10"`: a value, written where the text says `{value}`
 - `choices = [...]`: one picked
 - `then = "table"` or `[...]`: rolled next
@@ -240,15 +251,19 @@ tables/p0042-1.md  a ruled table as Markdown; p0042.png the page as a picture, f
 picture/0042.txt   yours, not the extract's: what you read off page 42's picture where the PDF has no text there
 ```
 
+## Dragons in a fight
+
+With `[combat] dragon = "choice"`, a Dragon on the hero's attack is a critical hit and waits for the player: `solo dragon double` rolls the weapon's dice twice, `solo dragon attack <foe>` makes a second attack on another foe that costs no turn, `solo dragon pierce` ignores armor (a piercing weapon's). A weapon with only one of these isn't asked. A foe's Dragon is a critical hit too: only a Dragon defends against it. A Dragon on a spell (`[magic] dragon`) waits the same way. The waiting choice is `state.choice`.
+
 ## Conditions and triggers
 
 Conditions (branches, exits, voices, secrets, `while`): `and`, `or`, `not`, comparisons, `in`, over `npc.<id>.<fate|attitude|location>`, `faction.<id>`, `promise.<id>`, `fact.<key>`, `clock.<id>`, `scene`, `visited.<scene>`, `pc.<track>`, `pc.conditions`, and the attitude names as numbers.
 
-Clock triggers: `time:<unit>`, `fact:<key>`, `scene:<id>`, `check:dragon`, `check:demon`, `check:<pool trigger>`, `check:strong_hit`, `check:weak_hit`, `check:miss` and `check:match` (an `action-roll` move's result), `npc:<id>:<fate>`, `promise:<id>:<status>`, `clock:<id>:full`. A move's result is final when no burn of momentum could still change it; a roll one could change holds its triggers back until the story goes on (the next commit, move or roll), or the burn.
+Clock triggers: `time:<unit>`, `activity` (a command that took a stretch or more of game time), `fact:<key>`, `scene:<id>`, `check:dragon`, `check:demon`, `check:<pool trigger>`, `check:strong_hit`, `check:weak_hit`, `check:miss` and `check:match` (an `action-roll` move's result), `npc:<id>:<fate>`, `promise:<id>:<status>`, `clock:<id>:full`. A move's result is final when no burn of momentum could still change it; a roll one could change holds its triggers back until the story goes on (the next commit, move or roll), or the burn.
 
 ## Commits (what the GM writes)
 
-`solo commit '<json>'`, every key optional: `note`, `facts` (`hero.<key>` facts follow the hero into later adventures), `npc` (`name`, `faction`, `attitude`, `fate`, `location`, `memory`, `template`, `attacker`, `monster`; for an NPC the adventure doesn't have, also `role`, `description`, `voice`, `wants`, `fears`). A person keeps their name: a different `name` for someone who already has one is refused, unless the commit has an `override` with the reason (they give their name at last), and `solo review` lists it, `faction` (a standing, or `standing`, `memory`, `name`), `promise` (`id`, `npc`, `terms`, `status`), `consequence` (`id`, `text`, `npc`, `at` (scene ids), `when` (a condition), `after` (game time), `status`: open, done, dropped), `pc` (tracks as `"+n"`/`"-n"` or a number to set; a negative number is a loss; `conditions`, `items` and `abilities` (what the hero has learned: heroic abilities, assets) with `add`/`remove`, a name or a list. A track stops at its own range: momentum runs from `min` to what impacts leave of `max`; in an `action-roll` system an impact keeps its track from rising), `clock`, `time`, `clue`, `chaos`, `learn` (`npc.wants`, `npc.fears`, `npc.<secret>`), `chronicle`, `end`, `override`.
+`solo commit '<json>'`, every key optional: `note`, `facts` (`hero.<key>` facts follow the hero into later adventures), `npc` (`name`, `faction`, `attitude`, `fate`, `location`, `memory`, `template`, `attacker`, `monster`; for an NPC the adventure doesn't have, also `role`, `description`, `voice`, `wants`, `fears`). A person keeps their name: a different `name` for someone who already has one is refused, unless the commit has an `override` with the reason (they give their name at last), and `solo review` lists it, `faction` (a standing, or `standing`, `memory`, `name`), `promise` (`id`, `npc`, `terms`, `status`), `consequence` (`id`, `text`, `npc`, `at` (scene ids), `when` (a condition), `after` (game time), `status`: open, done, dropped), `pc` (tracks as `"+n"`/`"-n"` or a number to set; a negative number is a loss; `conditions`, `items`, `abilities` (what the hero has learned: heroic abilities, assets) and `spells`/`prepared` with `add`/`remove`, a name or a list. An ability that raises a track (Robust) raises it when added, and can be added again if it stacks. A track stops at its own range: momentum runs from `min` to what impacts leave of `max`; in an `action-roll` system an impact keeps its track from rising), `clock`, `time`, `clue`, `chaos`, `learn` (`npc.wants`, `npc.fears`, `npc.<secret>`), `chronicle`, `end`, `override`.
 
 ## Format versions
 

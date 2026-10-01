@@ -1,0 +1,60 @@
+# Made-up prices and weights for the test rules: the made-up armor says which rolls it hampers.
+[money]
+coins = { gold = 100, silver = 10, copper = 1 }
+
+[gear.chainmail]
+name = "Chainmail"
+category = "Armor"
+price = "9 gold"
+banes = ["sneaking"]
+metal = true
+source = "p. 1"
+
+[gear.open_helmet]
+name = "Open helmet"
+category = "Armor"
+price = "3 gold"
+banes = ["awareness", "ranged_attack"]
+source = "p. 1"
+
+[gear.torch]
+name = "Torch"
+category = "Light"
+price = "5 copper"
+weight = 1
+source = "p. 2"
+
+[gear.field_ration]
+name = "Field ration"
+category = "Food"
+price = "1 silver"
+weight = 0.25
+source = "p. 2"
+
+[gear.chest]
+name = "Chest"
+category = "Containers"
+price = "5 gold"
+weight = 3
+source = "p. 3"
+
+[gear.whistle]
+name = "Whistle"
+category = "Trade goods"
+price = "5 silver"
+weight = 0
+source = "p. 3"
+
+[gear.quiver_of_arrows]
+name = "Quiver of arrows"
+category = "Trade goods"
+price = "2 gold"
+weight = 1
+source = "p. 3"
+
+[gear.backpack]
+name = "Backpack"
+category = "Containers"
+price = "3 gold"
+weight = 0
+source = "p. 3"

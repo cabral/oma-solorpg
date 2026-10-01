@@ -5,10 +5,10 @@
 # (attributes, conditions, skills, what the tracks are called) and none of the numbers,
 # tables or procedures. Those come from your own copy of the book:
 #
-#   make rules BOOK=~/Books/dragonbane-core.pdf SOLO_BOOK=~/Books/deepfall-breach.pdf
+#   make dragonbane BOOKS=~/Books/Dragonbane
 #
-# builds ~/Games/solo/systems/dragonbane-rulebook over this pack, and
-# ~/Games/solo/systems/dragonbane over that (the solo rules, if you have that book). Until
+# builds ~/Games/solo/systems/dragonbane-rulebook over this pack, a pack for each
+# further book over that, and ~/Games/solo/systems/dragonbane on top (the solo rules). Until
 # they hold everything under `needs`, the engine won't start a campaign on this system.
 name = "Dragonbane"
 format = 1

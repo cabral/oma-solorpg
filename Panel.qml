@@ -13,7 +13,8 @@ import "book"
 //   writes in it as GM, run headless one turn at a time by `solo gm turn`.
 // - The Table: a sidebar docked on the right. Home (your campaigns and the Hall of the
 //   Fallen), New adventure (pick an adventure and a hero, then begin) and Table (sheet,
-//   rolls, fights, death rolls, rests, light, oracle, clocks, log).
+//   rolls, spells and abilities, fights and a Dragon's choice, death rolls, rests, light,
+//   gear and what is broken, oracle, clocks, log).
 // - The watcher: while a game is on, the desktop joins in (solo desk): a Dragon flashes
 //   the window borders and the screen gold, a Demon red, a blow jolts the screen, dying
 //   holds a red rim round it and death greys it, omens ripple it and arrive as
@@ -95,6 +96,14 @@ Item {
   property var openGroups: ({ "Adventure Moves": true })
   property string trackKind: "vow"
   property string trackRank: "dangerous"
+  // Magic and abilities: the power level of the next spell, the die the body gives for it, the spell waiting to
+  // be prepared (it asks which to put aside), the abilities switched on for the next blow, parry, rest or round,
+  // and what an ability that costs what you choose is paid.
+  property int power: 1
+  property string body: ""
+  property string preparing: ""
+  property var riders: []
+  property int spend: 1
 
   readonly property var pc: game && game.pc ? game.pc : null
   readonly property var labels: game && game.labels ? game.labels : ({ attributes: {}, tracks: {}, conditions: [], push: "condition", rests: {}, likelihood: [] })
@@ -114,6 +123,9 @@ Item {
   readonly property var trackIds: pc ? Object.keys(pc.tracks) : []
   readonly property var foeIds: fight ? Object.keys(fight.foes) : []
   readonly property var kit: game && game.kit ? game.kit : ({ weapons: [], armor: 0 })
+  readonly property var magic: game && game.magic ? game.magic : null
+  // A Dragon on a roll waits for the player's choice, and nothing else is rolled until it is made.
+  readonly property var waiting: game && game.choice && !dead ? game.choice : null
   // At zero HP. `dying` is the helpless kind: a hero who rallied themselves acts again.
   readonly property bool atZero: pc !== null && !!pc.dying
   readonly property bool dying: atZero && !pc.dying.rallied
@@ -544,10 +556,126 @@ Item {
 
   function attack(weapon) {
     var args = ["attack", root.aimedAt(), "--with", weapon, "--boons", String(root.boons), "--banes", String(root.banes)]
-    root.act(args, "fight", () => {
+    root.act(args.concat(root.useArgs("attack", "")), "fight", () => {
       root.boons = 0
       root.banes = 0
+      root.spent("attack", "")
     })
+  }
+
+  // Abilities. Those that go with a roll are switched on first (`riders`) and paid for when it is made.
+  function abilityCost(ability) {
+    var cost = ability.cost
+    return !cost ? "" : cost === "varies" ? "varies" : Object.keys(cost).map(t => cost[t] + " " + t.toUpperCase()).join(", ")
+  }
+
+  function ridersFor(scope) {
+    return (root.game && root.game.abilities ? root.game.abilities : []).filter(a => a.use === scope)
+  }
+
+  // The abilities switched on that belong to this roll (`on`: the parry or the dodge, the rest; "" for any).
+  function riding(scope, on) {
+    return root.ridersFor(scope).filter(a => root.riders.indexOf(a.name) !== -1 && (on === "" || a.on === null || a.on === on))
+  }
+
+  function useArgs(scope, on) {
+    var args = []
+    root.riding(scope, on).forEach(a => { args.push("--use"); args.push(a.name) })
+    return args
+  }
+
+  function spent(scope, on) {
+    var used = root.riding(scope, on).map(a => a.name)
+    root.riders = root.riders.filter(name => used.indexOf(name) === -1)
+  }
+
+  function toggleRider(name) {
+    root.riders = root.riders.indexOf(name) === -1 ? root.riders.concat([name]) : root.riders.filter(n => n !== name)
+  }
+
+  function useAbility(ability) {
+    var cost = ability.cost === "varies" ? ["--cost", String(root.spend)] : []
+    root.act(["ability"].concat(cost).concat(["--", ability.name]), "ability")
+  }
+
+  function spendMost() {
+    var varies = root.ridersFor("alone").filter(a => a.cost === "varies")
+    return varies.length > 0 && root.pc && root.pc.tracks[varies[0].track] ? Math.max(1, root.pc.tracks[varies[0].track].value) : 1
+  }
+
+  // Dragons: what the player may choose, a free attack once for each other foe standing.
+  function dragonOptions() {
+    var blow = { double: ["Double damage", "The weapon's dice, rolled twice"], pierce: ["Pierce armor", "Armor doesn't blunt the blow"],
+                 attack: ["", "Another attack on a different foe, at no cost in turns"] }
+    var spell = { double: ["Double the effect", "The spell's damage or healing doubled"], free: ["Cast for free", "The Dragon pays for it: the WP come back"],
+                  another: ["Another spell", "Cast another at once, with a bane"] }
+    var waiting = root.waiting
+    var options = []
+    if (waiting) {
+      var words = waiting.kind === "spell" ? spell : blow
+      waiting.options.forEach(o => {
+        var say = words[o] || [o.charAt(0).toUpperCase() + o.slice(1).replace(/_/g, " "), ""]
+        if (o === "attack" && waiting.kind !== "spell") {
+          root.standing().filter(f => f !== waiting.target).forEach(f => options.push({ option: o, foe: f, tip: say[1], label: "Attack " + root.fight.foes[f].name }))
+        } else {
+          options.push({ option: o, foe: "", tip: say[1], label: say[0] })
+        }
+      })
+    }
+    return options
+  }
+
+  // Why the free attack isn't offered, when it is one of the choices and no other foe is standing.
+  function dragonNote() {
+    var asked = root.waiting && root.waiting.kind !== "spell" && root.waiting.options.indexOf("attack") !== -1
+    return asked && root.dragonOptions().every(o => o.option !== "attack") ? "No other foe is standing for a free attack." : ""
+  }
+
+  // Spells: the ones ready to cast (a trick is always ready), the ones in the grimoire, and the casting.
+  function ready() {
+    return root.magic ? root.magic.spells.filter(s => s.trick || s.prepared) : []
+  }
+
+  function grimoire() {
+    return root.magic ? root.magic.spells.filter(s => !s.trick && !s.prepared) : []
+  }
+
+  function castArgs(spell, fromGrimoire) {
+    var args = ["cast", "--boons", String(root.boons), "--banes", String(root.banes)]
+    if (spell.power) args = args.concat(["--power", String(root.power)])
+    if (spell.damage && root.fight && root.aimedAt() !== "") args = args.concat(["--target", root.aimedAt()])
+    if (root.body !== "" && !spell.heal) args = args.concat(["--body", root.body])
+    return args.concat(fromGrimoire ? ["--grimoire"] : []).concat(["--", spell.name])
+  }
+
+  function cast(spell, fromGrimoire) {
+    root.act(root.castArgs(spell, fromGrimoire), "magic", () => {
+      root.boons = 0
+      root.banes = 0
+      root.power = 1
+      root.body = ""
+    })
+  }
+
+  // A spell asks which to put aside when the hero already holds as many as they can.
+  function prepare(spell) {
+    if (root.magic.ready >= root.magic.limit) {
+      root.preparing = root.preparing === spell.name ? "" : spell.name
+    } else {
+      root.act(["prepare", "--", spell.name], "magic")
+    }
+  }
+
+  function putAside(spell) {
+    root.act(["prepare", "--drop", spell.name, "--", root.preparing], "magic", () => root.preparing = "")
+  }
+
+  function weaponNote(weapon) {
+    return weapon.condition === "broken" ? " (broken)" : weapon.condition === "damaged" ? " (damaged)" : ""
+  }
+
+  function worn() {
+    return root.kit.weapons.filter(w => w.condition)
   }
 
   function orderText() {
@@ -929,13 +1057,46 @@ Item {
     id: stepper
     property string label: ""
     property int value: 0
+    property int from: 0
+    property int to: 5
     signal stepped(int value)
     spacing: Style.space(4)
 
     Line { Layout.fillWidth: false; text: stepper.label; size: Style.font.bodySmall }
-    Choice { text: "−"; onClicked: stepper.stepped(Math.max(0, stepper.value - 1)) }
-    Line { Layout.fillWidth: false; text: String(stepper.value); font.bold: stepper.value > 0 }
-    Choice { text: "+"; onClicked: stepper.stepped(Math.min(5, stepper.value + 1)) }
+    Choice { text: "−"; onClicked: stepper.stepped(Math.max(stepper.from, stepper.value - 1)) }
+    Line { Layout.fillWidth: false; text: String(stepper.value); font.bold: stepper.value > stepper.from }
+    Choice { text: "+"; onClicked: stepper.stepped(Math.min(stepper.to, stepper.value + 1)) }
+  }
+
+  // The abilities that go with a roll: tap one to switch it on, and it is paid for with the roll.
+  component Riders: Flow {
+    id: riders
+    property string scope: ""
+    property string when: ""
+    readonly property var choices: root.ridersFor(scope).filter(a => when === "" || a.on === null || a.on === when)
+    Layout.fillWidth: true
+    spacing: Style.space(4)
+    visible: choices.length > 0 && root.pc !== null && !root.dying && !root.dead
+
+    Line {
+      Layout.fillWidth: false
+      size: Style.font.caption
+      color: root.dim
+      text: ({ attack: "With the blow:", defend: "With a parry or dodge:", round: "For the new round:", rest: "With the rest:" })[riders.scope] || ""
+    }
+
+    Repeater {
+      model: riders.choices
+      delegate: Choice {
+        required property var modelData
+        text: modelData.name + " (" + root.abilityCost(modelData) + ")"
+        tooltipText: modelData.afford ? "Add it to the next roll, and pay for it" : "Not enough to pay for it"
+        selected: root.riders.indexOf(modelData.name) !== -1
+        enabled: modelData.afford
+        opacity: enabled ? 1 : 0.4
+        onClicked: root.toggleRider(modelData.name)
+      }
+    }
   }
 
   // Momentum runs below zero and has a ceiling and a reset the hero's impacts move, so its
@@ -1322,7 +1483,7 @@ Item {
               visible: root.adventure !== null && root.system === null
               color: Color.urgent
               size: Style.font.bodySmall
-              text: "This adventure's system pack isn't installed, or its rules aren't built from your book yet (make rules)."
+              text: "This adventure's system pack isn't installed, or its rules aren't built from your books yet (make dragonbane)."
             }
 
             Flow {
@@ -1885,6 +2046,40 @@ Item {
               }
             }
 
+            // A Dragon waits for what it does: nothing else is rolled until this is chosen.
+            Card {
+              visible: root.waiting !== null
+              clickable: false
+              selected: true
+
+              Line { text: "A Dragon! What does it do?"; font.bold: true }
+
+              Flow {
+                Layout.fillWidth: true
+                spacing: Style.space(4)
+
+                Repeater {
+                  model: root.dragonOptions()
+                  delegate: Choice {
+                    required property var modelData
+                    text: modelData.label
+                    tooltipText: modelData.tip
+                    enabled: !action.running
+                    onClicked: root.act(["dragon", modelData.option].concat(modelData.foe !== "" ? [modelData.foe] : []), "dragon")
+                  }
+                }
+              }
+
+              Line {
+                visible: root.dragonNote() !== ""
+                size: Style.font.caption
+                color: root.dim
+                text: root.dragonNote()
+              }
+            }
+
+            ErrorLine { place: "dragon" }
+
             // Momentum can be burned on the roll just made, when that would change it.
             Choice {
               visible: !!(root.game && root.game.burn) && !root.dead
@@ -1932,6 +2127,155 @@ Item {
             }
 
             ErrorLine { place: "roll" }
+
+            // Magic: what the hero can cast, with the power, boons and banes above, and what is ready to cast.
+
+            Heading { text: "Magic"; visible: root.magic !== null && !root.dying && !root.dead }
+
+            RowLayout {
+              Layout.fillWidth: true
+              spacing: Style.space(12)
+              visible: root.magic !== null && !root.dying && !root.dead
+
+              Stepper {
+                label: "Power"
+                from: 1
+                to: root.magic ? root.magic.max_power : 1
+                value: root.power
+                onStepped: function(value) { root.power = value }
+              }
+
+              Line {
+                size: Style.font.caption
+                color: root.dim
+                text: root.magic ? "Ready " + root.magic.ready + " of " + root.magic.limit : ""
+              }
+            }
+
+            Flow {
+              Layout.fillWidth: true
+              spacing: Style.space(4)
+              visible: root.magic !== null && root.magic.body.length > 0 && !root.dying && !root.dead
+
+              Line { Layout.fillWidth: false; size: Style.font.caption; color: root.dim; text: "Power from the body:" }
+
+              Repeater {
+                model: root.magic ? root.magic.body : []
+                delegate: Choice {
+                  required property string modelData
+                  text: modelData
+                  tooltipText: "Draw that many WP from your body, and take as much harm"
+                  selected: root.body === modelData
+                  onClicked: root.body = root.body === modelData ? "" : modelData
+                }
+              }
+            }
+
+            Flow {
+              Layout.fillWidth: true
+              spacing: Style.space(4)
+              visible: root.magic !== null && !root.dying && !root.dead
+
+              Repeater {
+                model: root.ready()
+                delegate: Choice {
+                  required property var modelData
+                  text: modelData.name + (modelData.cost !== null ? " · " + modelData.cost + " " + root.magic.track.toUpperCase() : "")
+                  tooltipText: (modelData.trick ? "A magic trick: always ready, and it works" : "Rank " + modelData.rank + (modelData.school ? ", " + modelData.school : ""))
+                    + (modelData.damage && root.fight ? ". Hits the foe you aimed at" : "") + (modelData.heal ? ". Heals you" : "")
+                  selected: !modelData.trick
+                  enabled: root.waiting === null && !action.running
+                  opacity: enabled ? 1 : 0.5
+                  onClicked: root.cast(modelData, false)
+                }
+              }
+            }
+
+            Fold { id: grimoireFold; label: "Grimoire"; visible: root.grimoire().length > 0 && !root.dying && !root.dead }
+
+            Repeater {
+              model: grimoireFold.open && !root.dying && !root.dead ? root.grimoire() : []
+              delegate: RowLayout {
+                id: spellRow
+                required property var modelData
+                Layout.fillWidth: true
+                spacing: Style.space(4)
+
+                Line { text: spellRow.modelData.name + (spellRow.modelData.cost !== null ? " · " + spellRow.modelData.cost + " " + root.magic.track.toUpperCase() : "") }
+
+                Choice {
+                  text: "Prepare"
+                  tooltipText: "Hold it ready (it takes a stretch of study, the GM's to give)"
+                  selected: root.preparing === spellRow.modelData.name
+                  onClicked: root.prepare(spellRow.modelData)
+                }
+
+                Choice {
+                  text: "From the grimoire"
+                  tooltipText: spellRow.modelData.reaction ? "A reaction spell can't be cast from the grimoire" : "Cast it unprepared: it takes twice as long"
+                  enabled: root.waiting === null && !action.running && !spellRow.modelData.reaction
+                  opacity: enabled ? 1 : 0.4
+                  onClicked: root.cast(spellRow.modelData, true)
+                }
+              }
+            }
+
+            Line {
+              visible: root.preparing !== ""
+              size: Style.font.caption
+              color: root.dim
+              text: "You hold as many as you can: put which aside for " + root.preparing + "?"
+            }
+
+            Flow {
+              Layout.fillWidth: true
+              spacing: Style.space(4)
+              visible: root.preparing !== ""
+
+              Repeater {
+                model: root.preparing !== "" ? root.ready().filter(s => !s.trick) : []
+                delegate: Choice {
+                  required property var modelData
+                  text: modelData.name
+                  onClicked: root.putAside(modelData)
+                }
+              }
+            }
+
+            ErrorLine { place: "magic" }
+
+            // Abilities that stand alone: paid for and written down, and the GM says what they do.
+
+            Heading { text: "Abilities"; visible: root.ridersFor("alone").length > 0 && !root.dying && !root.dead }
+
+            Stepper {
+              visible: root.ridersFor("alone").some(a => a.cost === "varies") && !root.dying && !root.dead
+              label: "Spend"
+              from: 1
+              to: root.spendMost()
+              value: root.spend
+              onStepped: function(value) { root.spend = value }
+            }
+
+            Flow {
+              Layout.fillWidth: true
+              spacing: Style.space(4)
+              visible: !root.dying && !root.dead
+
+              Repeater {
+                model: root.ridersFor("alone")
+                delegate: Choice {
+                  required property var modelData
+                  text: modelData.name + " (" + root.abilityCost(modelData) + ")"
+                  tooltipText: modelData.afford ? "Pay for it; the GM reads its page" : "Not enough to pay for it"
+                  enabled: modelData.afford && !action.running
+                  opacity: enabled ? 1 : 0.4
+                  onClicked: root.useAbility(modelData)
+                }
+              }
+            }
+
+            ErrorLine { place: "ability" }
 
             // Vows, journeys and fights (Ironsworn): ten boxes each, marked as the story earns it.
 
@@ -2111,10 +2455,18 @@ Item {
                 model: root.kit.weapons.filter(w => w.attack)
                 delegate: Choice {
                   required property var modelData
-                  text: modelData.label + " " + modelData.damage
+                  text: modelData.label + " " + modelData.damage + root.weaponNote(modelData)
+                  tooltipText: modelData.condition === "broken" ? "Broken: mend it first" : modelData.condition === "damaged" ? "Damaged: a bane on every use until it is mended" : ""
+                  enabled: modelData.condition !== "broken" && root.waiting === null
+                  opacity: enabled ? 1 : 0.4
                   onClicked: root.attack(modelData.id)
                 }
               }
+            }
+
+            Riders {
+              visible: root.fight !== null && !root.dying && !root.dead && root.standing().length > 0 && !root.fight.incoming && choices.length > 0
+              scope: "attack"
             }
 
             Line {
@@ -2133,7 +2485,7 @@ Item {
               Choice {
                 visible: !root.dying && root.fight !== null && !!root.fight.incoming && root.fight.incoming.can_defend !== false
                 text: "Evade"
-                onClicked: root.act(["defend", "evade"], "fight")
+                onClicked: root.act(["defend", "evade"].concat(root.useArgs("defend", "dodge")), "fight", () => root.spent("defend", "dodge"))
               }
 
               Repeater {
@@ -2141,8 +2493,11 @@ Item {
                   && root.fight.incoming.can_parry !== false ? root.kit.weapons.filter(w => w.parry) : []
                 delegate: Choice {
                   required property var modelData
-                  text: "Parry: " + modelData.label
-                  onClicked: root.act(["defend", "parry", "--with", modelData.id], "fight")
+                  text: "Parry: " + modelData.label + root.weaponNote(modelData)
+                  tooltipText: modelData.condition === "broken" ? "Broken: mend it first" : ""
+                  enabled: modelData.condition !== "broken"
+                  opacity: enabled ? 1 : 0.4
+                  onClicked: root.act(["defend", "parry", "--with", modelData.id].concat(root.useArgs("defend", "parry")), "fight", () => root.spent("defend", "parry"))
                 }
               }
 
@@ -2152,11 +2507,21 @@ Item {
               }
             }
 
+            Riders {
+              visible: root.fight !== null && !root.dying && !root.dead && choices.length > 0
+              scope: "defend"
+            }
+
+            Riders {
+              visible: root.fight !== null && !root.dying && !root.dead && choices.length > 0
+              scope: "round"
+            }
+
             Choice {
               visible: root.fight !== null && !root.dead
               text: "Next round"
               tooltipText: "Deal new initiative cards"
-              onClicked: root.act(["fight", "--round"], "fight")
+              onClicked: root.act(["fight", "--round"].concat(root.useArgs("round", "")), "fight", () => root.spent("round", ""))
             }
 
             ErrorLine { place: "fight" }
@@ -2180,7 +2545,8 @@ Item {
                   tooltipText: used ? "Already taken this shift" : root.fight ? "Not during a fight" : "Recover and let time pass"
                   enabled: !blocked
                   opacity: blocked ? 0.4 : 1
-                  onClicked: root.act(["rest", modelData].concat(root.tend && root.labels.rests[modelData].tend ? ["--tend"] : []), "rest")
+                  onClicked: root.act(["rest", modelData].concat(root.tend && root.labels.rests[modelData].tend ? ["--tend"] : []).concat(root.useArgs("rest", modelData)),
+                                      "rest", () => root.spent("rest", modelData))
                 }
               }
 
@@ -2191,6 +2557,11 @@ Item {
                 selected: root.tend
                 onClicked: root.tend = !root.tend
               }
+            }
+
+            Riders {
+              visible: root.fight === null && !root.dying && !root.dead && choices.length > 0
+              scope: "rest"
             }
 
             ErrorLine { place: "rest" }
@@ -2357,13 +2728,48 @@ Item {
               }
             }
 
-            Heading { text: "Gear"; visible: root.pc !== null && root.pc.items.length > 0 }
+            Heading { text: "Gear"; visible: root.pc !== null && (root.pc.items.length > 0 || root.worn().length > 0) }
 
             Line {
               visible: root.pc !== null && root.pc.items.length > 0
               size: Style.font.bodySmall
               text: root.pc ? root.pc.items.join(", ") : ""
             }
+
+            Line {
+              visible: root.game !== null && !!root.game.load
+              size: Style.font.bodySmall
+              color: root.game && root.game.load && root.game.load.over ? Color.urgent : root.dim
+              text: root.game && root.game.load ? "Carrying " + root.game.load.carried + " of " + root.game.load.capacity + (root.game.load.over ? ": over the load" : "") : ""
+            }
+
+            Repeater {
+              model: root.pc && !root.dead ? root.worn() : []
+              delegate: RowLayout {
+                id: mending
+                required property var modelData
+                Layout.fillWidth: true
+                spacing: Style.space(4)
+
+                Line { text: "The " + mending.modelData.label.toLowerCase() + " is " + mending.modelData.condition; size: Style.font.bodySmall }
+
+                Choice {
+                  text: "Mend"
+                  tooltipText: "A roll to mend it"
+                  enabled: !action.running
+                  onClicked: root.act(["repair", mending.modelData.id], "gear")
+                }
+
+                Choice {
+                  text: "Artisan"
+                  tooltipText: "An artisan mends it, with no roll"
+                  enabled: !action.running
+                  onClicked: root.act(["repair", mending.modelData.id, "--artisan"], "gear")
+                }
+              }
+            }
+
+            ErrorLine { place: "gear" }
 
             Heading { text: "Table settings"; visible: root.prefsText() !== "" }
 
