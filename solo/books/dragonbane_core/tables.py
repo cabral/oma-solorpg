@@ -58,11 +58,14 @@ def _lines(book, section):
     return own + half
 
 
-def _table(pack, section, table_id, name):
+def _table(pack, section, table_id, name, sides=None):
+    """A roll table of a section. `sides` is the most it can roll, for a table whose header has no die (or two: "D6/D10"); its formula is then the highest roll it has a row for."""
     book = pack.book
     lines = _lines(book, section)
     notes = [line for line in lines if line["text"].startswith("* ")]
-    found = dice.read([line for line in lines if line not in notes], book.glue)
+    found = dice.read([line for line in lines if line not in notes], book.glue, sides)
+    top = found["rows"][-1]["high"] if found["rows"] else 0
+    found["faces"] = top if sides else max(found["faces"], top)
     columns = [header for header in found["headers"][1:] if header]
     note = paragraphs(notes, book.glue)
     rows = []

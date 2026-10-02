@@ -997,7 +997,7 @@ def _import_book(args):
     path = Path(args.path).expanduser()
     many = path.is_dir() and not (path / "manifest.json").exists()
     if many and args.out:
-        raise SoloError("--out is the folder of one pack: point at one PDF, or give --systems for the folder of all of them")
+        raise SoloError("--out is the folder of one pack: point at one PDF, or give --systems and --adventures for the folders of all of them")
     folders = []
     for source in (sorted(path.glob("*.pdf")) if many else [path]):
         if source.is_dir():
@@ -1009,11 +1009,10 @@ def _import_book(args):
     known, unknown = books.plan(folders)
     failed = []
     for folder, recipe in known:
-        target = Path(args.out).expanduser() if args.out else (Path(args.systems).expanduser() if args.systems else library.home() / "systems") / recipe.PACK
-        target, written, notes = books.build(folder, target, args.replace)
+        target, written, notes = books.build(folder, args.out, args.replace, args.systems, args.adventures)
         print(f"\n{recipe.NAME}: built {len(written)} files in {target}")
         print("\n".join(f"  note: {note}" for note in notes))
-        report = audit.audit(target, "system")
+        report = audit.audit(target, books.kind_of(recipe))
         print(f"  audit: {report['counts']['mapped']} items mapped, {len(report['unclaimed'])} unclaimed, {len(report['problems'])} problems, "
               f"{len(report['unverified'])} unverified, {len((report['pages'] or {}).get('uncited', []))} pages uncited")
         if audit.failed(report):
@@ -1942,8 +1941,9 @@ def _parser():
     sub.add_argument("--system", default="dragonbane", help="character: system pack to map onto (name or folder)")
     sub = sources.add_parser("book", help="a book's pack, built from its bookmarks and layout by the importer that knows it (the core rules, ...)")
     sub.add_argument("path", help="the book's PDF (extracted first, needs PyMuPDF), the folder solo extract left, or a folder of PDFs: every one an importer knows")
-    sub.add_argument("--out", help="the system pack folder to build, for one book (default: the importer's own, in ~/Games/solo/systems)")
-    sub.add_argument("--systems", help="the folder the packs are built in (default ~/Games/solo/systems); to compare with packs you have, build in another and use solo compare")
+    sub.add_argument("--out", help="the pack folder to build, for one book (default: the importer's own, in ~/Games/solo/systems or adventures)")
+    sub.add_argument("--systems", help="the folder the system packs are built in (default ~/Games/solo/systems), and where an adventure finds the rules it is for; to compare with packs you have, build in another and use solo compare")
+    sub.add_argument("--adventures", help="the folder the adventure packs are built in (default ~/Games/solo/adventures)")
     sub.add_argument("--sources", help="where the PDF is extracted to (default: ~/Games/solo/sources/<book>)")
     sub.add_argument("--replace", action="store_true", help="build over a pack this made before (never one made any other way)")
     sub = sources.add_parser("table", help="a roll table from solo extract's Markdown (tables/p0042-1.md) or pasted lines (-)")

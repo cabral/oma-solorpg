@@ -13,7 +13,7 @@ python3 tests/gm_eval/run.py bell-cheat --repeat 3 --seed 1  # three runs, the s
 python3 tests/gm_eval/compare.py abc1234 def5678            # did the change between two commits help?
 ```
 
-It needs `claude` on PATH (or `--agent codex`), the Dragonbane rules built from your book for the Red Tusk scenarios (`make rules`: runs see your own `~/Games/solo` packs, and play in a throwaway home; the `bell-*` scenarios play Ironsworn, whose rules ship with the project, so they need no book), and costs real model calls: a short scenario is a few minutes, a long run with an agent player half an hour or more. Each run writes a folder under `runs/` (git-ignored):
+It needs `claude` on PATH (or `--agent codex`), the Dragonbane rules built from your book for the Red Tusk scenarios (`make rules`: runs see your own `~/Games/solo` packs, and play in a throwaway home; the `bell-*` scenarios play Ironsworn, whose rules ship with the project, so they need no book; scenarios written for an adventure imported from a book are kept outside the repository, with the book, and run by path), and costs real model calls: a short scenario is a few minutes, a long run with an agent player half an hour or more. Each run writes a folder under `runs/` (git-ignored):
 
 - `report.md`: the verdict. Expectations met or missed, problems found in code, refused commands, the judge's scores and issues, a line per turn.
 - `transcript.md`: every message, with the engine's events between them (hidden ones marked).
@@ -91,4 +91,4 @@ unless = "visited.final_battle"
 
 Scripted players test a specific part the same way every time (the GM's dice still vary). Agent players test the long haul: whether the GM keeps the clocks, the gates and the facts straight over many turns and lost sessions.
 
-When a new adventure is imported, write scenarios for its riskiest parts (a puzzle gate, a fight with a strange monster, a timer) before playing it for real.
+When a new adventure is imported, write scenarios for its riskiest parts (a puzzle gate, a fight with a strange monster, a timer) before playing it for real. A scenario written from a book's adventure holds its scenes' facts, so it stays outside this repository (`~/Games/solo/gm_eval/scenarios/`) and runs by path: `python3 tests/gm_eval/run.py ~/Games/solo/gm_eval/scenarios/<name>.toml`. A scripted player can't react to the story, so write its lines so that they hold whatever the dice do (a roll that fails sends a foe running, and a line that thanks him for the key is then wrong).

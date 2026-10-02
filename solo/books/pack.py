@@ -1,9 +1,10 @@
-"""What a recipe builds: a system pack, held in memory until it is written.
+"""What a recipe builds: a system pack or an adventure pack, held in memory until it is written.
 
 A recipe reads a book's sections (solo/sections.py) and adds to the pack: a file, a section
-of system.toml, creation.toml or gear.toml, and an inventory item saying where the book had it
-and where it went. `write` then puts the lot on disk, inventory.toml included, so that
-`solo audit` can check the pack against the book's pages the way it checks one an agent wrote.
+of system.toml, creation.toml or gear.toml (or, for an adventure, of adventure.toml and its
+chapters), and an inventory item saying where the book had it and where it went. `write`
+then puts the lot on disk, inventory.toml included, so that `solo audit` can check the pack
+against the book's pages the way it checks one an agent wrote.
 """
 
 import re
@@ -16,6 +17,9 @@ _SPANS = re.compile(r"\d+")
 
 
 class Pack:
+    # The file that says a folder holds a pack of this kind.
+    MAIN = "system.toml"
+
     def __init__(self, book, out, name, extends=None):
         self.book, self.out, self.name = book, Path(out), name
         self.system = {"format": packs.FORMAT, **({"extends": extends} if extends else {})}
@@ -51,16 +55,20 @@ class Pack:
         """Something the recipe couldn't read or had to decide: the importer says it after the build."""
         self.notes.append(text)
 
+    def _main(self, header):
+        """The files that make this a pack of its kind: {path: text}."""
+        return {"system.toml": dump_toml(self.system, header)}
+
     def write(self, extract):
         """Write the pack: its files, its sections of system.toml, creation.toml and gear.toml, and
         an inventory of everything in them. Nothing is overwritten that the recipe didn't write
         before: a pack that is already there is refused."""
-        if (self.out / "system.toml").exists():
+        if (self.out / self.MAIN).exists():
             raise SoloError(f"{self.out} already holds a pack: build into an empty folder, then compare")
         self.out.mkdir(parents=True, exist_ok=True)
         header = [f"Built by `solo import book` from {self.book.manifest.get('source', 'the book')}; every number and word below is read from its pages.",
                   "Pages are the PDF's, as solo extract numbers them."]
-        files = {"system.toml": dump_toml(self.system, header), "inventory.toml": dump_toml(
+        files = {**self._main(header), "inventory.toml": dump_toml(
             {"source": self.name, "extract": str(extract), "items": self.items}, ["What the book holds and where it went: see docs/PACK_FORMAT.md."])}
         for name, data in (("creation.toml", self.creation), ("gear.toml", self.gear)):
             if data:
@@ -70,3 +78,24 @@ class Pack:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(text, encoding="utf-8")
         return sorted([*files, *self.files])
+
+
+class AdventurePack(Pack):
+    """An adventure: adventure.toml, a chapters/<id>.toml for each part of the book that has scenes (`chapter(id)` is its dict, in the shape of
+    adventure.toml's own scenes, clocks, factions and weapons), and beside them the scenes' text, NPCs, tables and characters as files. `system` is the
+    pack the adventure is for, as the engine loads it: what a recipe needs of the rules (the weapons, the bestiary) is read from it."""
+
+    MAIN = "adventure.toml"
+
+    def __init__(self, book, out, name, system):
+        super().__init__(book, out, name)
+        self.system_pack = system
+        self.adventure = {"format": packs.FORMAT}
+        self.chapters = {}
+
+    def chapter(self, chapter_id):
+        return self.chapters.setdefault(chapter_id, {})
+
+    def _main(self, header):
+        return {"adventure.toml": dump_toml(self.adventure, header),
+                **{f"chapters/{chapter_id}.toml": dump_toml(data, header) for chapter_id, data in self.chapters.items()}}

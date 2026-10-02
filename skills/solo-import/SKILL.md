@@ -9,6 +9,10 @@ Read `docs/INGESTION.md` in the repository first: how earlier books were compile
 
 An adventure pack is a folder. The engine runs the game from it, and the GM agent reads its scene text one scene at a time. The source text stays close to the book. A thin structured layer on top holds only what has to be tracked or rolled.
 
+## Books that have an importer
+
+Dragonbane's Quickstart (The Sinking Tower) and Adventure Book (its campaign, titled The Secret of the Dragon Emperor) are built without you by `solo import book` (`make dragonbane BOOKS=<folder>`): scenes, exits, NPCs, tables and heroes, audited against the book's pages. Don't redo them by hand. Read what the build said (it notes each place it chose: a way it linked because the map is a picture, a person with no stat block, a monster the rulebook has the stats of) and add what only a GM's judgment gives: clocks and timers, the facts that open a gated exit, a profile's attitude, voices, `checks/`. Keep what you add in files the recipe doesn't write (a chapter file of your own in `chapters/`, with a name that sorts after its own, a new `npcs/` file), because `--replace` starts the pack over. Any other adventure is imported by you, below.
+
 ## Two passes
 
 1. Mechanical extraction, no judgement involved. From a Foundry export: `solo import foundry adventure <export files or folders> --out <pack>`. It writes `scenes.json`, `scenes/*.md`, `npcs/*.json` and `tables/*.json`. From a PDF, you do this pass yourself (below).

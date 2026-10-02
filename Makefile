@@ -26,7 +26,7 @@ help:
 	@echo "oma-solorpg"
 	@echo ""
 	@echo "  make install                         link solo, the GM skills and the Omarchy plugin; enable the plugin"
-	@echo "  make dragonbane BOOKS=<folder of PDFs>  build Dragonbane's packs from your books (the rules, the Book of Magic, the card decks, the solo booklet), no agent"
+	@echo "  make dragonbane BOOKS=<folder of PDFs>  build Dragonbane's packs and adventures from your books (the rules, the Book of Magic, the card decks, the solo booklet, the Quickstart and the Adventure Book), no agent"
 	@echo "  make rules BOOK=<pdf> [SOLO_BOOK=<pdf>]  the same by an agent, for printings the importers don't know"
 	@echo "  make supplement ID=<id> BOOK=<pdf>   lay one more book over the rulebook: a card deck, the Book of Magic"
 	@echo "  make check                           validate the rules you built, audit them against the books, run their own checks"
@@ -53,7 +53,7 @@ deps:
 	@python3 -c "import pymupdf" 2>/dev/null || { \
 	  echo "solo extract needs PyMuPDF: uv pip install --system pymupdf"; exit 1; }
 
-# Dragonbane's packs from your own PDFs, without an agent: each book an importer here knows is read by its bookmarks and layout, and what the pack holds is checked
+# Dragonbane's packs and adventures from your own PDFs, without an agent: each book an importer here knows is read by its bookmarks and layout, and what the pack holds is checked
 # against the book's pages. Nothing of a book is in this repository: the importers hold where things are and how to read them. REPLACE=1 builds again over packs made this way.
 dragonbane: deps
 	@test -n "$(BOOKS)" || { echo "usage: make dragonbane BOOKS=~/Books/Dragonbane   (a folder of your PDFs, or one PDF)"; exit 2; }
