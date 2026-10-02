@@ -79,6 +79,25 @@ class CommitTest(CampaignTest):
         self.assertEqual((tracks["hp"]["value"], tracks["wp"]["value"]), (0, 11))
         self.assertEqual(len(event["warnings"]), 2)
 
+    def test_a_commit_that_gets_a_shape_wrong_is_told_what_it_holds_and_a_null_says_nothing(self):
+        with self.session() as c:
+            for payload, message in (({"time": "1 minute"}, r'time is a JSON object, like \{"stretch": 1\}'), ({"facts": ["hall.alarm"]}, "facts is a JSON object, like"),
+                                     ({"pc": "hp -2"}, "pc is a JSON object")):
+                with self.subTest(payload=payload), self.assertRaisesRegex(SoloError, message):
+                    c.commit(payload)
+            c.commit({"clue": "a seen thing", "learn": None, "facts": None, "time": None})
+            self.assertEqual(c.state["clues"], ["a_seen_thing"])
+
+    def test_a_commits_time_can_be_in_the_systems_units_plural_or_in_the_clocks(self):
+        with self.session() as c:
+            before = c.state["time"]
+            for spent, seconds in (({"rounds": 2}, 20), ({"stretch": 1}, 900), ({"minutes": 10}, 600), ({"hour": 1, "minute": 30}, 5400), ({"days": 1}, 86400)):
+                c.commit({"time": spent})
+                before += seconds
+                self.assertEqual(c.state["time"], before, spent)
+            with self.assertRaisesRegex(SoloError, "unknown time unit fortnights; the system has round, stretch, shift, and seconds, minutes, hours and days will do"):
+                c.commit({"time": {"fortnights": 1}})
+
     def test_rejected_commits_write_nothing(self):
         with self.session() as c:
             for payload, message in (

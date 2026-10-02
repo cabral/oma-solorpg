@@ -26,6 +26,11 @@ LIKELIHOOD = {
 _ODDS = ["very unlikely", "unlikely", "even", "likely", "very likely"]
 SPEAKERS = ("gm", "player")
 _COMMIT_KEYS = {"note", "facts", "npc", "faction", "promise", "pc", "clock", "time", "clue", "chronicle", "override", "chaos", "end", "learn", "consequence"}
+# What a clock says, for a commit's time in the words the GM would use for it.
+_CLOCK = {"second": 1, "minute": 60, "hour": 3600, "day": 86400}
+# The commit keys that hold a JSON object, with an example, for the GM that sends a string or a list instead.
+_COMMIT_OBJECTS = {"facts": '{"hall.alarm": true}', "npc": '{"orc_leader": {"attitude": "unfriendly"}}', "faction": '{"orcs": {"standing": "-1"}}', "pc": '{"hp": "-2"}',
+                   "clock": '{"ritual": "+1"}', "time": '{"stretch": 1}'}
 # What the GM writes down about someone it made up, so the next session meets the same person.
 # An adventure's own NPCs have these already; what changes about them is a memory.
 PROFILE_FIELDS = ("role", "description", "voice", "wants", "fears")
@@ -2307,13 +2312,14 @@ class Campaign:
         return triggers + ["activity"] * bool(minimum and after - before >= minimum)
 
     def _seconds(self, spent):
-        """{ stretch = 2 } in seconds, in the system's own time units."""
+        """{ stretch = 2 } in seconds, in the system's own time units (plural as well: rounds), or in the clock's (minutes: a GM writes what it means)."""
         seconds = 0
         for unit, amount in (spent or {}).items():
-            if unit in self.system["time"]:
-                seconds += int(self.system["time"][unit] * amount)
+            one = unit[:-1] if unit.endswith("s") and unit[:-1] in {**self.system["time"], **_CLOCK} else unit
+            if one in self.system["time"] or one in _CLOCK:
+                seconds += int({**_CLOCK, **self.system["time"]}[one] * amount)
             else:
-                raise SoloError(f"unknown time unit {unit}; the system has {', '.join(self.system['time']) or 'none'}")
+                raise SoloError(f"unknown time unit {unit}; the system has {', '.join(self.system['time']) or 'none'}, and seconds, minutes, hours and days will do")
         return seconds
 
     def _normalize(self, payload):
@@ -2334,6 +2340,10 @@ class Campaign:
             memory = ('; a memory belongs to someone: {"npc": {"<id>": {"memory": "..."}}}, or to a faction: '
                       '{"faction": {"<id>": {"memory": "..."}}}') if set(unknown) & {"memory", "memories"} else ""
             raise SoloError(f"unknown commit keys: {', '.join(unknown)} (allowed: {', '.join(sorted(_COMMIT_KEYS))}){money}{memory}")
+        payload = {key: value for key, value in payload.items() if value is not None}  # null says nothing
+        for key, example in _COMMIT_OBJECTS.items():
+            if key in payload and not isinstance(payload[key], dict):
+                raise SoloError(f"{key} is a JSON object, like {example}")
         override = payload.get("override")
         changes = {}
         for key in ("note", "chronicle", "end"):
@@ -3459,8 +3469,8 @@ def _story_entry(state, event, entry):
 
 
 def _attack_name(text, fallback):
-    """What a monster's attack is called, from its result: "Furious Bite! The eel sinks
-    its fangs into you." is a Furious Bite. Otherwise the table's name."""
+    """What a monster's attack is called, from its result: "Sharp Bite! The wolf sinks
+    its teeth into you." is a Sharp Bite. Otherwise the table's name."""
     name, bang, _ = text.partition("!")
     return name.strip() if bang and 0 < len(name.strip()) <= 32 else fallback
 
