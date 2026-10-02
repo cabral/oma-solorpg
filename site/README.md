@@ -11,7 +11,7 @@ media/oma-solorpg-45s.mp4
 media/oma-solorpg-15s.mp4
 ```
 
-Until a file is there, its tab shows a placeholder with the path it's waiting for. H.264 in an MP4 plays everywhere; keep each under about 20 MB so the page stays quick (`ffmpeg -i in.mp4 -c:v libx264 -crf 24 -preset slow -movflags +faststart -c:a aac -b:a 128k out.mp4`).
+A cut whose file isn't there loses its tab, and with one cut left the tabs step aside. With neither file there, the player shows a placeholder with the path the 45-second cut is waiting for. H.264 in an MP4 plays everywhere; keep each under about 20 MB so the page stays quick (`ffmpeg -i in.mp4 -c:v libx264 -crf 24 -preset slow -movflags +faststart -c:a aac -b:a 128k out.mp4`).
 
 ## Where the pictures come from
 

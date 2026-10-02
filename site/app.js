@@ -157,7 +157,7 @@
   var THEMES = [
     ["tokyo-night", "Tokyo Night", ["#1a1b26", "#7aa2f7", "#e0af68", "#f7768e"]],
     ["catppuccin", "Catppuccin", ["#1e1e2e", "#89b4fa", "#f9e2af", "#f38ba8"]],
-    ["catppuccin-latte", "Catppuccin Latte", ["#eff1f5", "#1e66f5", "#c47a0c", "#d20f39"]],
+    ["catppuccin-latte", "Catppuccin Latte", ["#eff1f5", "#1e66f5", "#9a5f07", "#d20f39"]],
     ["gruvbox", "Gruvbox", ["#282828", "#83a598", "#fabd2f", "#fb4934"]],
     ["nord", "Nord", ["#2e3440", "#88c0d0", "#ebcb8b", "#bf616a"]],
     ["everforest", "Everforest", ["#2d353b", "#a7c080", "#dbbc7f", "#e67e80"]],
@@ -243,7 +243,16 @@
   function workspaces() {
     var links = $$(".workspaces a[data-ws]");
     var sections = $$("section[data-ws]");
-    function mark(ws) { links.forEach(function (a) { a.classList.toggle("active", a.dataset.ws === ws); }); }
+    var title = $("#bar-title"), shown = null;
+    // The window title beside the numbers, the way waybar shows the focused window's.
+    function mark(ws) {
+      links.forEach(function (a) { a.classList.toggle("active", a.dataset.ws === ws); });
+      var link = links.filter(function (a) { return a.dataset.ws === ws; })[0];
+      if (!title || !link || shown === ws) return;
+      shown = ws;
+      title.classList.add("swap");
+      setTimeout(function () { title.textContent = link.title; title.classList.remove("swap"); }, reduced ? 0 : 160);
+    }
     if ("IntersectionObserver" in window) {
       var io = new IntersectionObserver(function (entries) {
         entries.forEach(function (e) { if (e.isIntersecting) mark(e.target.dataset.ws); });
@@ -288,6 +297,9 @@
     });
     // Right click the plugin's d20 and the Book opens.
     b.addEventListener("contextmenu", function (e) { e.preventDefault(); $("#book").scrollIntoView({ behavior: reduced ? "auto" : "smooth" }); });
+    // The player's line in the hero says what it does.
+    var line = $("#player-roll");
+    if (line) line.addEventListener("click", function () { b.click(); });
   }
 
   // Title cards: decrypting out of noise ----------------------------------------------
@@ -330,7 +342,7 @@
       var t = $(".decrypt", head);
       if (t) decrypt(t);
     };
-    var heads = $$(".card-head, .titlecard");
+    var heads = $$(".card-head, .hero-copy");
     if (!("IntersectionObserver" in window)) { heads.forEach(reveal); return; }
     // A title is readable until it's about to come into view; then it decrypts, the way a
     // scene's name does when the hero walks in.
@@ -344,6 +356,8 @@
 
   // The GM writes: words stream in ----------------------------------------------------
 
+  // Quick enough that the first paragraph is whole within about a second and a half: it's
+  // the one every visitor reads.
   function streams() {
     $$(".stream").forEach(function (p) {
       if (reduced) return;
@@ -357,11 +371,11 @@
         (function next() {
           if (i >= spans.length) return;
           spans[i++].classList.add("on");
-          setTimeout(next, 26 + Math.random() * 46);
+          setTimeout(next, 12 + Math.random() * 18);
         })();
       }
       if ("IntersectionObserver" in window) {
-        var io = new IntersectionObserver(function (es) { if (es[0].isIntersecting) { setTimeout(go, 900); io.disconnect(); } });
+        var io = new IntersectionObserver(function (es) { if (es[0].isIntersecting) { setTimeout(go, 350); io.disconnect(); } });
         io.observe(p);
       } else go();
     });
@@ -502,7 +516,7 @@
     var verdict = $("#verdict"), ring = $("#ring"), sparks = $("#sparks"), log = $("#roll-log");
     var push = $("#push"), pushChips = $("#push-chips"), rest = $("#rest-btn");
     var CONDITIONS = ["exhausted", "sickly", "dazed", "angry", "scared", "disheartened"];
-    var heroFace = $('.face-win pre.portrait');
+    var heroFace = $(".roll-hero pre.portrait", root), conds = $("#sheet-conds");
 
     function draw(faces, landed, result) {
       row.innerHTML = faces.map(function (f) {
@@ -520,6 +534,11 @@
     function mood() { return state.conditions.length ? state.conditions[state.conditions.length - 1] : "calm"; }
     function faceTo(m) {
       if (heroFace) drawFace(heroFace, "ragna", m, true);
+      // The sheet lists what she's carrying, the way the Table does.
+      if (conds) {
+        conds.textContent = state.conditions.length ? state.conditions.join(", ") : "no conditions";
+        conds.classList.toggle("held", state.conditions.length > 0);
+      }
     }
 
     root.addEventListener("click", function (e) {
@@ -739,39 +758,56 @@
     dialog.addEventListener("click", function (e) { if (e.target === dialog) dialog.close(); });
   }
 
-  // The trailer: a video when it's there, a placeholder until then -----------------------
+  // The trailer: a tab for each cut that's there; a placeholder only if none is -------------
 
   function videos() {
+    var tabs = $$(".tabs [role=tab]"), tablist = $(".tabs");
+    function select(tab) {
+      tabs.forEach(function (t) {
+        var on = t === tab, panel = $("#" + t.getAttribute("aria-controls"));
+        t.setAttribute("aria-selected", String(on));
+        panel.hidden = !on;
+        var v = $("video", panel);
+        if (!on && v && !v.paused) v.pause();
+      });
+    }
+    function placeholder(box) {
+      if ($(".placeholder", box)) return;
+      var ph = document.createElement("div");
+      ph.className = "placeholder";
+      ph.innerHTML = '<div><pre class="ph-die" aria-hidden="true">' + esc(d20Art(20)) + '</pre>' +
+        '<div class="rule revealed" aria-hidden="true"><span></span><i>◆</i><span></span></div>' +
+        '<p class="ph-title">The trailer rises here</p>' +
+        '<p class="ph-file">' + esc(box.dataset.file) + "</p></div>";
+      box.appendChild(ph);
+      $("video", box).hidden = true;
+    }
+    // A cut whose file isn't in media/ (or won't play here) loses its tab. The tabs step
+    // aside when one cut is left, and the last one shows where its file goes.
+    function missing(box) {
+      if (box.dataset.missing) return;
+      box.dataset.missing = "1";
+      var tab = tabs.filter(function (t) { return t.getAttribute("aria-controls") === box.id; })[0];
+      var left = tabs.filter(function (t) { return !$("#" + t.getAttribute("aria-controls")).dataset.missing; });
+      if (!left.length) {
+        // None is there: the first cut's panel says where its file goes.
+        var first = $("#" + tabs[0].getAttribute("aria-controls"));
+        select(tabs[0]);
+        placeholder(first);
+        if (tablist) tablist.hidden = true;
+        return;
+      }
+      if (tab) tab.hidden = true;
+      if (tab && tab.getAttribute("aria-selected") === "true") select(left[0]);
+      if (tablist) tablist.hidden = left.length < 2;
+    }
     $$(".video").forEach(function (box) {
       var video = $("video", box), source = $("source", box);
-      function missing() {
-        if ($(".placeholder", box)) return;
-        var ph = document.createElement("div");
-        ph.className = "placeholder";
-        ph.innerHTML = '<div><pre class="ph-die" aria-hidden="true">' + esc(d20Art(20)) + '</pre>' +
-          '<div class="rule revealed" aria-hidden="true"><span></span><i>◆</i><span></span></div>' +
-          '<p class="ph-title">The trailer rises here</p>' +
-          '<p class="ph-file">' + esc(box.dataset.file) + "</p></div>";
-        box.appendChild(ph);
-        video.hidden = true;
-      }
-      if (source) source.addEventListener("error", missing);
-      video.addEventListener("error", missing);
-      // A file that exists but won't play in this browser is missing too.
-      if (video.canPlayType && !video.canPlayType("video/mp4")) missing();
+      if (source) source.addEventListener("error", function () { missing(box); });
+      video.addEventListener("error", function () { missing(box); });
+      if (video.canPlayType && !video.canPlayType("video/mp4")) missing(box);
     });
-    var tabs = $$(".tabs [role=tab]");
-    tabs.forEach(function (tab) {
-      tab.addEventListener("click", function () {
-        tabs.forEach(function (t) {
-          var on = t === tab, panel = $("#" + t.getAttribute("aria-controls"));
-          t.setAttribute("aria-selected", String(on));
-          panel.hidden = !on;
-          var v = $("video", panel);
-          if (!on && v && !v.paused) v.pause();
-        });
-      });
-    });
+    tabs.forEach(function (tab) { tab.addEventListener("click", function () { select(tab); }); });
   }
 
   // Terminals that type themselves -----------------------------------------------------
