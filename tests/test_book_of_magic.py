@@ -1,9 +1,11 @@
 """The Book of Magic's importer on a made-up book with its bookmarks: new schools as skills, how a mage starts in each, spells by rank, tricks, recipes and
 ingredients (invented things, the shapes and phrases of the real pages)."""
 
+import os
 import tempfile
 import tomllib
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from fake_book import FakeBook, Flow
@@ -19,6 +21,14 @@ class BookOfMagicTest(unittest.TestCase):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.tmp = Path(folder.name)
+        # The audit loads the pack with what it extends: a player's rulebook pack, here a
+        # stand-in over the bundled names, so the test doesn't lean on ~/Games/solo.
+        rulebook = self.tmp / "home" / "systems" / "dragonbane-rulebook"
+        rulebook.mkdir(parents=True)
+        (rulebook / "system.toml").write_text('extends = "bundled:dragonbane"\n')
+        home = unittest.mock.patch.dict(os.environ, {"SOLO_HOME": str(self.tmp / "home")})
+        home.start()
+        self.addCleanup(home.stop)
         flow = Flow(FakeBook(self.tmp / "extract"))
         flow.section(1, "Contents", "Everything in order.")
         flow.section(1, "Preface", "About this book.")

@@ -1,8 +1,10 @@
 """The solo booklet read into a system pack: the wiring the booklet's own words give its tables, and, on a made-up booklet with its bookmarks, its tools."""
 
+import os
 import tempfile
 import tomllib
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from fake_book import FakeBook
@@ -43,6 +45,14 @@ class BookletTest(unittest.TestCase):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.tmp = Path(folder.name)
+        # The audit loads the pack with what it extends: a player's rulebook pack, here a
+        # stand-in over the bundled names, so the test doesn't lean on ~/Games/solo.
+        rulebook = self.tmp / "home" / "systems" / "dragonbane-rulebook"
+        rulebook.mkdir(parents=True)
+        (rulebook / "system.toml").write_text('extends = "bundled:dragonbane"\n')
+        home = unittest.mock.patch.dict(os.environ, {"SOLO_HOME": str(self.tmp / "home")})
+        home.start()
+        self.addCleanup(home.stop)
         made = FakeBook(self.tmp / "extract")
         page = [0]
 

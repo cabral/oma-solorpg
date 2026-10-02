@@ -1,9 +1,11 @@
 """The three decks of cards on made-up decks: a card to a page, a back with a word of art, the frame's words among the card's lines (invented cards, the shapes of the
 real ones)."""
 
+import os
 import tempfile
 import tomllib
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from fake_book import CELL, FakeBook
@@ -32,6 +34,14 @@ class TreasureTest(unittest.TestCase):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.tmp = Path(folder.name)
+        # The audit loads the pack with what it extends: a player's rulebook pack, here a
+        # stand-in over the bundled names, so the test doesn't lean on ~/Games/solo.
+        rulebook = self.tmp / "home" / "systems" / "dragonbane-rulebook"
+        rulebook.mkdir(parents=True)
+        (rulebook / "system.toml").write_text('extends = "bundled:dragonbane"\n')
+        home = unittest.mock.patch.dict(os.environ, {"SOLO_HOME": str(self.tmp / "home")})
+        home.start()
+        self.addCleanup(home.stop)
         self.book = deck(self.tmp / "extract", [
             ["COPPER COINS", "2D6 × 10 copper coins"], ["CHALICE", "2D6 × 5 gold coins DRAGONBANE CORE SET"], ["GEMSTONE", "Roll D6. 1: glass (worth 2 copper),", "2: ruby (worth 25 gold)"],
             ["MASTERCRAFTED", "WEAPON", "Roll D6. 1: dagger, 2: short sword."], ["RUSTY NAIL", "Roll for EVADE. Fail it and you take D6 damage.", "Armor does nothing."],
