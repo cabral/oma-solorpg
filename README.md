@@ -29,6 +29,8 @@ git clone <this repository> ~/Code/oma-solorpg && cd ~/Code/oma-solorpg
 make install                                              # links solo, the GM skills and the plugin, and enables it
 ```
 
+To remove it, run `make uninstall`: it disables the plugin and deletes the symlinks `make install` made (`~/.local/bin/solo`, the plugin link, the GM skills in your agents' skill folders), and nothing else. Your campaigns and packs in `~/Games/solo/` stay; delete that folder yourself if you want them gone. `make install` only ever creates symlinks and never replaces a real file.
+
 Then click the d20 in the bar, choose New adventure, pick **The Bell Under the Hill** and Begin. That is Ironsworn, and it needs nothing else: no book, no import.
 
 Dragonbane needs your own PDFs. Point `make dragonbane` at a folder of them and it builds every pack it has an importer for, in about twenty seconds and without an agent:

@@ -26,6 +26,7 @@ help:
 	@echo "oma-solorpg"
 	@echo ""
 	@echo "  make install                         link solo, the GM skills and the Omarchy plugin; enable the plugin"
+	@echo "  make uninstall                       disable the plugin and remove the links make install made (your games and packs stay)"
 	@echo "  make dragonbane BOOKS=<folder of PDFs>  build Dragonbane's packs and adventures from your books (the rules, the Book of Magic, the card decks, the solo booklet, the Quickstart and the Adventure Book), no agent"
 	@echo "  make rules BOOK=<pdf> [SOLO_BOOK=<pdf>]  the same by an agent, for printings the importers don't know"
 	@echo "  make supplement ID=<id> BOOK=<pdf>   lay one more book over the rulebook: a card deck, the Book of Magic"
@@ -47,6 +48,14 @@ install:
 	$(SOLO_BIN) setup --plugin
 	@if command -v omarchy >/dev/null 2>&1; then omarchy plugin enable $(PLUGIN); \
 	else echo "Enable the plugin with: omarchy plugin enable $(PLUGIN)"; fi
+
+# Removes only the symlinks that point into this folder; ~/Games/solo (campaigns, packs) is left alone.
+uninstall:
+	@if command -v omarchy >/dev/null 2>&1; then omarchy plugin disable $(PLUGIN) || true; fi
+	@for link in "$$HOME/.local/bin/solo" "$$HOME/.config/omarchy/plugins/$(PLUGIN)" \
+	    $$(for d in .claude .agents .codex .pi/agent; do for s in solo-gm solo-import solo-rules-import solo-campaign; do echo "$$HOME/$$d/skills/$$s"; done; done); do \
+	  if [ -L "$$link" ] && case "$$(readlink "$$link")" in "$(CURDIR)"/*|"$(CURDIR)") true;; *) false;; esac; then rm "$$link" && echo "removed $$link"; fi; \
+	done
 
 # PyMuPDF reads the PDFs. Only the import commands need it.
 deps:
