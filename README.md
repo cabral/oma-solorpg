@@ -25,11 +25,14 @@ It is a VTT, not a video game. There are no graphics beyond text: the scene is a
 You need Omarchy, `make`, Python 3.11+ and your agent (`claude` or `codex`).
 
 ```bash
-git clone <this repository> ~/Code/oma-solorpg && cd ~/Code/oma-solorpg
+git clone https://github.com/cabral/oma-solorpg ~/Code/oma-solorpg && cd ~/Code/oma-solorpg
+git checkout --detach bd2f5057e03e66332a89d7d24653baffbda3d6e6   # a fixed commit, so what you read is what you run
 make install                                              # links solo, the GM skills and the plugin, and enables it
 ```
 
 To remove it, run `make uninstall`: it disables the plugin and deletes the symlinks `make install` made (`~/.local/bin/solo`, the plugin link, the GM skills in your agents' skill folders), and nothing else. Your campaigns and packs in `~/Games/solo/` stay; delete that folder yourself if you want them gone. `make install` only ever creates symlinks and never replaces a real file.
+
+The commit above is the latest release at the time of writing; to try something newer, read what changed (`git log`, `git diff`) before you check it out, since `make install` links this folder into your desktop and your agents' skill folders.
 
 Then click the d20 in the bar, choose New adventure, pick **The Bell Under the Hill** and Begin. That is Ironsworn, and it needs nothing else: no book, no import.
 
