@@ -8,7 +8,7 @@ It is a VTT, not a video game. There are no graphics beyond text: the scene is a
 - An omarchy-shell plugin is the table: a d20 in the bar, the Book where the story is told, and a Table docked beside it where you start adventures, make heroes, roll, rest and ask the oracle.
 - It plays Ironsworn out of the box: the game's free rules ship in this repository, with credit (see [Ironsworn](#ironsworn) below), so a fresh install plays with no book. It also plays Dragonbane, from your own copy of the books, which aren't in this repository (see [Dragonbane](#dragonbane)); `make dragonbane` builds it from your PDFs.
 
-<p><img src="assets/the-book.png" alt="The Book mid-fight in The Red Tusk Hall: the hero's text portrait and sheet, a fight drawn in characters, the GM's prose and the dice log" width="900"></p>
+<p><img src="preview.png" alt="The Book mid-fight in The Red Tusk Hall: the hero's text portrait and sheet, a fight drawn in characters, the GM's prose and the dice log" width="900"></p>
 
 *The Book in The Red Tusk Hall, the adventure this repository ships: a fight drawn in characters, the hero's sheet and the dice log beside the GM's story.*
 
