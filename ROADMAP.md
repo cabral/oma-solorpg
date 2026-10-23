@@ -28,6 +28,7 @@ Left:
 
 - Alone in Deepfall Breach, the adventure half of the solo booklet, has no importer, only the maintainer's agent-made private pack. Decide whether it gets a `dragonbane_solo` recipe, and give it a GM play test (a mission, a fight, a search, a rest).
 - Its foes are the booklet's minion and boss templates; swapping in the rulebook's bestiary (`monster = "troll"`) is the maintainer's choice.
+- The extract reads tables as cells and maps as pictures under a layout model, so the six-column tables and the maps' ways stop needing an agent's eyes: [docs/INGESTION_PLAN.md](docs/INGESTION_PLAN.md), in six steps, each shipped on its own.
 - The play-test scenarios for the imported rules, run from outside the repository, including a hero built from the imported creation tables who gets through a fight, a rest and a push. They cost model calls, and nobody has run them yet.
 - A fixed-dice test in the private packs' `checks/` for each rule that lands from now on.
 - The imported adventures' timers as clocks (The Sinking Tower's two hours, the Adventure Book's village time loop), what opens each gated exit, a person's attitude, ferocity that depends on the party, and a `checks/` folder for each adventure.

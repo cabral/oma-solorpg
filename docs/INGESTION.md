@@ -1,6 +1,6 @@
 # Ingesting content
 
-How books become packs the engine can run, what has been done so far, and what went wrong along the way. Written for the agent doing the next import, and for whoever writes an importer. The formats are in [PACK_FORMAT.md](PACK_FORMAT.md); the step-by-step skills are `skills/solo-import` (adventures) and `skills/solo-rules-import` (rulebooks).
+How books become packs the engine can run, what has been done so far, and what went wrong along the way. Written for the agent doing the next import, and for whoever writes an importer. The formats are in [PACK_FORMAT.md](PACK_FORMAT.md); the step-by-step skills are `skills/solo-import` (adventures) and `skills/solo-rules-import` (rulebooks). What the extract will read next, tables as cells and maps as pictures under a layout model, is planned in [INGESTION_PLAN.md](INGESTION_PLAN.md).
 
 Contents: [What imports have taught the engine](#what-imports-have-taught-the-engine) · [Books with an importer](#books-with-an-importer-solo-import-book) · [A game that ships: Ironsworn](#a-game-that-ships-ironsworn-from-datasworn) · [The process](#the-process) · [Mapping a book to the engine](#mapping-a-book-to-the-engine) · [Rules and system packs](#rules-and-system-packs) · [Lessons learned](#lessons-learned) · [Play-testing an ingestion](#play-testing-an-ingestion) · [Legal and privacy](#legal-and-privacy)
 
