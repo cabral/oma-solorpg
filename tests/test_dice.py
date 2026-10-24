@@ -26,6 +26,37 @@ class DiceTest(unittest.TestCase):
             with self.subTest(expr=expr), self.assertRaises(SoloError):
                 dice.parse(expr)
 
+    def test_white_space_is_ignored_but_never_joins_two_numbers(self):
+        for expr in ("2d6 + 3", " 2D6\t+\n3 ", "4D6 KH 3", "5d6 c s > = 6", "d 6", "1 d 6", "d6\xa0+\xa01"):
+            with self.subTest(expr=expr):
+                self.assertTrue(dice.parse(expr))
+        for expr in ("2d6 3", "d6 6", "1 2d6", "2d6x1 0", "d6\xa06"):
+            with self.subTest(expr=expr), self.assertRaisesRegex(SoloError, "splits a number"):
+                dice.parse(expr)
+
+    def test_a_term_that_rolls_nothing_or_counts_every_die_is_refused(self):
+        for expr in ("0d6", "d6kh0", "d6kl0", "d6cs>=0", "d6x0", "2d6+0d4"):
+            with self.subTest(expr=expr), self.assertRaisesRegex(SoloError, "out of range"):
+                dice.parse(expr)
+        self.assertEqual(dice.roll("d6+0", Dice(4))["total"], 4)
+
+    def test_a_term_counts_successes_or_multiplies_not_both(self):
+        for expr in ("5d6cs>=6x2", "5d6cs>=6*2", "5d6kh3cs>=5\xd72"):
+            with self.subTest(expr=expr), self.assertRaisesRegex(SoloError, "successes and also multiplies"):
+                dice.parse(expr)
+
+    def test_digits_and_letters_are_ascii(self):
+        arabic_indic_three = chr(0x663)
+        kelvin_sign = chr(0x212A)
+        for expr in (arabic_indic_three + "d6", f"4d6{kelvin_sign}h3", f"d6+{arabic_indic_three}"):
+            with self.subTest(expr=expr), self.assertRaises(SoloError):
+                dice.parse(expr)
+
+    def test_an_expression_has_at_most_1000_characters(self):
+        self.assertTrue(dice.parse("2d6" + " " * 997))
+        with self.assertRaisesRegex(SoloError, "longer than 1000"):
+            dice.parse("2d6" + " " * 998)
+
     def test_outcomes(self):
         self.assertEqual(dice.outcomes("1d6"), set(range(1, 7)))
         self.assertEqual(dice.outcomes("2d20kl"), set(range(1, 21)))
