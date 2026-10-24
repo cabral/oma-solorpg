@@ -10,6 +10,36 @@ class DiceTest(unittest.TestCase):
         self.assertEqual(dice.roll("3d20kl", Dice(12, 4, 17))["total"], 4)
         self.assertEqual(dice.roll("2d20kh", Dice(12, 4))["total"], 12)
 
+    def test_kept_dice_in_words_are_kh_and_kl(self):
+        # "keep 3" and "k3" keep the highest three, as the Table's dice field says; the words
+        # "highest" and "lowest" say which, and then the number is optional.
+        wanted = {
+            "4d6kh3": ("4d6 keep 3", "4d6k3", "4D6 KEEP 3", "4d6 k 3", "4d6 keep highest 3", "4d6 Keep Highest 3", "4d6keephighest3"),
+            "4d6kl2": ("4d6 keep lowest 2", "4d6keeplowest2", "4d6 KEEP LOWEST 2"),
+            "2d20kh": ("2d20 keep highest", "2d20keephighest"),
+            "2d20kl": ("2d20 keep lowest",),
+            "4d6kh3cs>=5": ("4d6 keep 3 cs >= 5", "4d6k3cs>=5"),
+            "4d6kh3x10": ("4d6 keep 3 x 10", "4d6k3*10"),
+        }
+        for short, spellings in wanted.items():
+            reading = [(t["count"], t["sides"], t["keep"], t["keep_n"], t["success_at"], t["times"]) for t in dice.parse(short)]
+            for expr in spellings:
+                with self.subTest(expr=expr):
+                    got = [(t["count"], t["sides"], t["keep"], t["keep_n"], t["success_at"], t["times"]) for t in dice.parse(expr)]
+                    self.assertEqual(got, reading)
+        self.assertEqual(dice.roll("4d6 keep 3", Dice(5, 2, 6, 4))["total"], 15)
+        self.assertEqual(dice.roll("4d6 keep lowest 2", Dice(5, 2, 6, 4))["total"], 6)
+        self.assertEqual(dice.roll("2d20 keep highest", Dice(7, 15))["parts"][0]["kept"], [15])
+        self.assertEqual(dice.outcomes("4d6 keep 3"), set(range(3, 19)))
+
+    def test_a_keep_in_words_needs_its_number_unless_it_says_which(self):
+        for expr in ("4d6k", "4d6 keep", "4d6 keep cs>=5", "4d6k0", "4d6 keep 0", "4d6 keep highest 0", "4d6 keep lowest 0"):
+            with self.subTest(expr=expr), self.assertRaises(SoloError):
+                dice.parse(expr)
+        for expr in ("4d6 keep 3 highest", "4d6 keep highest lowest 2", "4d6 keep high 3", "4d6 keeps 3", "4d6kept3", "d6 keep 3 keep 2"):
+            with self.subTest(expr=expr), self.assertRaisesRegex(SoloError, "can't read"):
+                dice.parse(expr)
+
     def test_counting_successes_plus_a_constant(self):
         result = dice.roll("5d6cs>=6+1", Dice(6, 2, 6, 1, 5))
         self.assertEqual(result["total"], 3)
