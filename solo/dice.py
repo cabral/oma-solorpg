@@ -8,6 +8,11 @@ Terms joined by + or -:
   NdMcs>=T   count the dice showing T or more           5d6cs>=6
   NdMxK      the dice's total times K (also * or ×)      2d6x10
   K          a constant                                 1d6+2
+
+Case and white space don't matter, except that white space can't split a number: "2d6 3" is an
+error, not 2d63. What a person typed by mistake is refused, never read as something else: a dice
+count, a keep, a success number and a multiplier are at least 1, and a term counts successes or
+multiplies, not both. Digits are 0-9, and an expression has at most 1000 characters.
 """
 
 import os
@@ -16,19 +21,36 @@ import re
 
 from . import SoloError
 
-_TERM = re.compile(r"([+-]?)(?:(\d*)d(\d+)(?:(kh|kl)(\d*))?(?:cs>=(\d+))?(?:[x*×](\d+))?|(\d+))")
+# ASCII, so \d is 0-9 and no other digit.
+_TERM = re.compile(r"([+-]?)(?:(\d*)d(\d+)(?:(kh|kl)(\d*))?(?:cs>=(\d+))?(?:[x*×](\d+))?|(\d+))", re.ASCII)
+# White space as JavaScript's \s has it (tab, line feed, vertical tab, form feed, carriage return,
+# the space separators, the byte order mark, and the line and paragraph separators), so that a
+# JavaScript implementation of these rules reads the same text the same way.
+_SPACE_CHARS = "".join(chr(c) for c in (
+    0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x20, 0xA0, 0x1680, *range(0x2000, 0x200B),
+    0x2028, 0x2029, 0x202F, 0x205F, 0x3000, 0xFEFF,
+))
+_SPACES = re.compile(f"[{_SPACE_CHARS}]+")
+_SPLIT_NUMBER = re.compile(f"[0-9][{_SPACE_CHARS}]+[0-9]")
+# Only the letters A-Z are lower-cased: str.lower() reads the Kelvin sign as a k.
+_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
 # Expressions come from packs other people write, so they are bounded: checking a table
 # enumerates every total, and a d100000000 would never finish.
 _MAX_DICE = 100
 _MAX_SIDES = 1000
 _MAX_TERMS = 20
+_MAX_CHARS = 1000
 _MAX_OUTCOMES = 1_000_000
 _system_rng = random.SystemRandom()
 
 
 def parse(expr):
     """Split an expression into terms. Raises SoloError on anything it can't read."""
-    text = expr.replace(" ", "").lower()
+    if len(expr) > _MAX_CHARS:
+        raise SoloError(f"dice expression is longer than {_MAX_CHARS} characters")
+    elif _SPLIT_NUMBER.search(expr):
+        raise SoloError(f"can't read dice expression {expr!r}: white space splits a number")
+    text = _SPACES.sub("", expr).translate(_LOWER)
     terms = []
     pos = 0
     while pos < len(text):
@@ -51,8 +73,12 @@ def parse(expr):
                 "success_at": int(success_at) if success_at else None,
                 "times": int(times) if times else 1,
             }
-            if term["count"] > _MAX_DICE or not 2 <= term["sides"] <= _MAX_SIDES:
+            if not 1 <= term["count"] <= _MAX_DICE or not 2 <= term["sides"] <= _MAX_SIDES:
                 raise SoloError(f"dice term {term['text']!r} is out of range")
+            elif term["keep_n"] < 1 or term["times"] < 1 or (success_at is not None and term["success_at"] < 1):
+                raise SoloError(f"dice term {term['text']!r} is out of range")
+            elif success_at is not None and times is not None:
+                raise SoloError(f"dice term {term['text']!r} counts successes and also multiplies")
         terms.append(term)
         if len(terms) > _MAX_TERMS:
             raise SoloError(f"dice expression {expr!r} has more than {_MAX_TERMS} terms")

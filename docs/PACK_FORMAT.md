@@ -193,6 +193,8 @@ What a roll decided cites it anywhere in the pack's files, most often in a `sour
 
 `solo validate` checks that the ranges cover every result the formula can roll.
 
+A dice expression is terms joined by `+` or `-`: `NdM`, `d66`, `NdMkhK` and `NdMklK` (keep the highest or lowest), `NdMcs>=T` (count the dice that show T or more), `NdMxK` (the total times K) and plain numbers; the top of `solo/dice.py` lists them. White space is ignored except between two digits, so `2d6 3` is an error and not `2d63`. A dice count, a keep number, a success number and a multiplier are at least 1, and a term counts successes or multiplies, not both. `solo validate` names a term that does not read.
+
 ### Scene text: `scenes/<id>.md`
 
 ```markdown
