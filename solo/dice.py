@@ -5,6 +5,8 @@ Terms joined by + or -:
   d66        two d6 read as tens and units (11-66)     d66
   NdMkh[K]   keep the K highest dice, K defaults to 1   2d20kh
   NdMkl[K]   keep the K lowest dice                     3d20kl
+  NdMkK      keep the K highest dice                    4d6k3
+  NdM keep K, keep highest [K], keep lowest [K]         4d6 keep 3, 2d20 keep lowest
   NdMcs>=T   count the dice showing T or more           5d6cs>=6
   NdMxK      the dice's total times K (also * or ×)      2d6x10
   K          a constant                                 1d6+2
@@ -21,8 +23,12 @@ import re
 
 from . import SoloError
 
-# ASCII, so \d is 0-9 and no other digit.
-_TERM = re.compile(r"([+-]?)(?:(\d*)d(\d+)(?:(kh|kl)(\d*))?(?:cs>=(\d+))?(?:[x*×](\d+))?|(\d+))", re.ASCII)
+# ASCII, so \d is 0-9 and no other digit. A keep is kh or kl (or keephighest or keeplowest), with its
+# number after, which may be left out; or k or keep, which keep the highest and need their number.
+_TERM = re.compile(
+    r"([+-]?)(?:(\d*)d(\d+)(?:(?:(kh|kl|keephighest|keeplowest)(\d*)|(keep|k)(\d+)))?(?:cs>=(\d+))?(?:[x*×](\d+))?|(\d+))",
+    re.ASCII,
+)
 # White space as JavaScript's \s has it (tab, line feed, vertical tab, form feed, carriage return,
 # the space separators, the byte order mark, and the line and paragraph separators), so that a
 # JavaScript implementation of these rules reads the same text the same way.
@@ -57,7 +63,9 @@ def parse(expr):
         match = _TERM.match(text, pos)
         if match is None or match.end() == pos or (pos > 0 and not match.group(1)):
             raise SoloError(f"can't read dice expression {expr!r} at {text[pos:]!r}")
-        sign, count, sides, keep, keep_n, success_at, times, constant = match.groups()
+        sign, count, sides, keep_which, keep_digits, keep_plain, keep_plain_digits, success_at, times, constant = match.groups()
+        keep = "kl" if keep_which in ("kl", "keeplowest") else "kh" if keep_which or keep_plain else None
+        keep_n = keep_digits or keep_plain_digits
         if any(len(number or "") > 6 for number in (count, sides, keep_n, success_at, times, constant)):
             raise SoloError(f"dice term {match.group(0).lstrip('+-')!r} is out of range")
         elif constant is not None:

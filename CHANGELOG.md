@@ -15,6 +15,7 @@ What changed in each version of oma-solorpg. The version is the one in `manifest
 - The rest of Dragonbane on the Table and in the engine: a Magic section (`solo cast`, `prepare`, `learn`), heroic abilities (`solo ability`), a Dragon's choice on an attack (`solo dragon`), weapons that get damaged or break (`solo repair`, Mend and Artisan in Gear), the load, ranged attacks, monster rules, and journeys (`solo journey`, `camp`).
 - For contributors: CI on every pull request, CONTRIBUTING.md, issue and pull request templates, and a format version in every pack (`format = 1`).
 - `make uninstall`.
+- Kept dice can be written in words: `4d6 keep 3` and `4d6k3` keep the highest three, and `keep highest` or `keep lowest` say which, with the number left out for one die. `kh` and `kl` read as they did.
 
 ### Changed
 
