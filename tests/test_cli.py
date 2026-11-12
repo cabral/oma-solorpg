@@ -24,6 +24,8 @@ class CliCase(unittest.TestCase):
         env = {
             "XDG_STATE_HOME": str(self.tmp / "state"), "HOME": str(self.tmp / "home"),
             "SOLO_HOME": str(self.tmp / "games"), "SOLO_SEED": "5",
+            # No layout model, whatever the machine has installed: tests that want one bring a stand-in.
+            "SOLO_INGEST": str(self.tmp / "ingest"),
             # A bug fails a test with its traceback, not the player's one line.
             "SOLO_DEBUG": "1",
         }

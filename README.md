@@ -130,6 +130,17 @@ python3 -m venv ~/.venvs/solo && ~/.venvs/solo/bin/pip install pymupdf
 . ~/.venvs/solo/bin/activate && make dragonbane BOOKS=~/Books/Dragonbane
 ```
 
+### The layout model
+
+`solo extract` can also run a document layout model, Docling, which finds a page's tables, pictures, captions and running heads and writes them to `structure/` beside the text. It is optional: without it the extract reads the book as it always has, and nothing that plays or builds Dragonbane's packs needs it yet. It is PyTorch and a few hundred megabytes of models, so it lives in an environment of its own, never in the system Python:
+
+```bash
+sudo pacman -S uv        # once, if uv isn't installed
+make ingest-deps         # Docling with CPU PyTorch in ~/.local/share/solo/ingest, models fetched once
+```
+
+After that `solo extract` uses it on its own (about two to three seconds a page on a laptop CPU, plus a minute to load the models), and `--no-structure` skips it. `solo setup` says whether it found it. To remove it, delete `~/.local/share/solo/ingest`. `SOLO_INGEST` points at another folder.
+
 ### No agent found
 
 The Book runs Omarchy's default agent headless, and it can drive three: Claude Code (`claude`), Codex (`codex`) and Pi (`pi`, version 1.3 or newer). `solo setup` says which agent it found. If it found none, install one of them and make it Omarchy's default agent (`omarchy default agent`), then run `make install` again so its skill folder gets the GM skills. Another agent still plays, in a terminal: Terminal on the table, or `solo play --terminal`.
@@ -406,7 +417,7 @@ Don't publish packs built from books you bought. They stay in `~/Games/solo`, wh
 | `solo recall <words>` / `history` | the GM's long memory: search everything said and written down, or the whole story in order |
 | `solo state` / `log` / `rebuild` / `validate` / `outline` | inspection, repair and review |
 | `solo new [<adventure>]` / `character` / `library` / `use` / `play [--terminal]` / `delete <dir> [--yes]` | campaigns and heroes |
-| `solo setup` / `import` / `extract <pdf>` / `inventory` / `audit` / `compare` | installation and content: a book's PDF as text, a pack built from a book (`import book`), a first inventory, a table from the book, Ironsworn from Datasworn, a pack checked against its inventory and its pages, two packs side by side |
+| `solo setup` / `import` / `extract <pdf>` / `structure <extract>` / `inventory` / `audit` / `compare` | installation and content: a book's PDF as text, what the layout model found in it against the extract's own reading and an inventory's tables, a pack built from a book (`import book`), a first inventory, a table from the book, Ironsworn from Datasworn, a pack checked against its inventory and its pages, two packs side by side |
 | `solo campaign new\|next\|roll\|check` | a campaign from a premise: roll it, roll its next mission from what the hero did, roll for its author, check it's written and every roll is used |
 
 ## Development

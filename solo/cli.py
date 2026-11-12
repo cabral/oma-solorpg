@@ -342,6 +342,11 @@ def _preflight(skill_dirs):
                               "or choose Claude Code, Codex or Pi with omarchy default agent"))
     if not skill_dirs:
         lines.append(("todo", "no agent found (claude, codex or pi), so no skills were linked: install one and run make install again"))
+    from . import structure
+    if structure.python():
+        lines.append(("ok", f"the layout model's environment, for tables and pictures in your books ({structure.environment()})"))
+    else:
+        lines.append(("optional", "no layout model: solo extract finds tables and pictures by its own rules. make ingest-deps installs Docling for it"))
     if importlib.util.find_spec("pymupdf"):
         lines.append(("ok", "PyMuPDF, for importing your books"))
     else:
@@ -1068,7 +1073,8 @@ def _on(words):
 
 def cmd_extract(args):
     from . import extract
-    out, manifest = extract.extract(args.pdf, args.out, tables=not args.no_tables)
+    out, manifest = extract.extract(args.pdf, args.out, tables=not args.no_tables, structure=not args.no_structure,
+                                    say=lambda line: print(line, file=sys.stderr, flush=True))
     print(f"wrote {out}")
     print(f"{manifest['pages']} pages, {manifest['chars']:,} characters (about {manifest['chars'] // 4:,} tokens), "
           f"{manifest['chapters']} chapter{'' if manifest['chapters'] == 1 else 's'} from the {manifest['toc_from']}"
@@ -1077,10 +1083,23 @@ def cmd_extract(args):
         print("The PDF has no page labels: the printed page numbers were read off the footers (manifest.json, labels).")
     if manifest["toc_from"] != "outline":
         print("The PDF has no bookmarks: toc.json is a guess from font sizes. Check it against the book's contents page.")
+    if manifest["structure"]:
+        read = manifest["structure"]
+        print(f"structure/: {read['reader']} {read['version']} in {read['seconds']} s, {read['tables']} tables, "
+              f"{read['pictures']} pictures, {read['maps']} of them maps (solo structure {out} compares it with the rest)")
+    elif manifest.get("structure_note") and not args.no_structure:
+        print(manifest["structure_note"])
     if manifest["scanned"]:
         listed = ", ".join(map(str, manifest["scanned"]))
         print(f"{len(manifest['scanned'])} pages have almost no text and a picture: {listed}. A cover, a chapter opener or full-page art looks like this and needs nothing; "
               "if a page that should hold text is among them (it is a scan), run ocrmypdf on the PDF and extract again.")
+
+
+def cmd_structure(args):
+    from . import audit, structure
+    inventory = audit.load_inventory(Path(args.inventory).expanduser()) if args.inventory else None
+    found = structure.measure(args.extract, inventory)
+    print(json.dumps(found, indent=2) if args.json else "\n".join(structure.report(found)))
 
 
 def cmd_import(args):
@@ -1122,7 +1141,8 @@ def _import_book(args):
         if source.is_dir():
             folders.append(source)
         else:
-            folder, manifest = extract.extract(source, None if many else args.sources, tables=False)
+            # The recipes read the lines, not the layout model's regions (yet: docs/INGESTION_PLAN.md, step 2), so it isn't run here.
+            folder, manifest = extract.extract(source, None if many else args.sources, tables=False, structure=False)
             print(f"read {manifest['pages']} pages of {source.name} into {folder}")
             folders.append(folder)
     known, unknown = books.plan(folders)
@@ -2084,6 +2104,12 @@ def _parser(only=None):
     sub.add_argument("pdf")
     sub.add_argument("--out", help="folder to write (default: ~/Games/solo/sources/<book>)")
     sub.add_argument("--no-tables", action="store_true", help="skip table detection (faster on a long book)")
+    sub.add_argument("--no-structure", action="store_true", help="skip the layout model even when it is installed (make ingest-deps)")
+
+    sub = command("structure", cmd_structure, "what the layout model found in an extract, against the extract's own tables and running heads and an inventory's tables")
+    sub.add_argument("extract", help="solo extract's folder for the book, extracted with the layout model installed")
+    sub.add_argument("--inventory", help="a pack whose inventory lists the book's tables (its extract is this one)")
+    sub.add_argument("--json", action="store_true", help="the numbers as JSON")
 
     sub = command("import", cmd_import, "build pack files: from a Foundry export, a book's roll table, or Datasworn's Ironsworn")
     sources = sub.add_subparsers(dest="source", required=True, metavar="source")

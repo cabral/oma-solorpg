@@ -1,6 +1,8 @@
 import json
+import os
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from test_cli import CliCase
@@ -45,12 +47,20 @@ def make_book(path, bookmarks=True):
     doc.save(path)
 
 
+def without_layout_model(case, tmp):
+    """The extract as it is without the ingest environment, whatever this machine has installed."""
+    patch = unittest.mock.patch.dict(os.environ, {"SOLO_INGEST": str(tmp / "no-ingest")})
+    patch.start()
+    case.addCleanup(patch.stop)
+
+
 @unittest.skipUnless(pymupdf, "PyMuPDF isn't installed")
 class ExtractTest(unittest.TestCase):
     def setUp(self):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.tmp = Path(folder.name)
+        without_layout_model(self, self.tmp)
         make_book(self.tmp / "book.pdf")
         self.out, self.manifest = extract.extract(self.tmp / "book.pdf", self.tmp / "out")
 
@@ -87,6 +97,11 @@ class ExtractTest(unittest.TestCase):
         self.assertIn({"page": 4, "kind": "grid", "file": "p0004-1.md", "image": "p0004.png"}, index)
         self.assertIn("|Dagger|D8|", self.read("tables/p0004-1.md"))
         self.assertTrue((self.out / "tables" / "p0003.png").exists())
+
+    def test_without_the_layout_model_the_manifest_says_so_and_structure_is_empty(self):
+        self.assertIsNone(self.manifest["structure"])
+        self.assertIn("make ingest-deps", self.manifest["structure_note"])
+        self.assertEqual(list((self.out / "structure").iterdir()), [])
 
     def test_a_page_with_only_a_picture_is_marked_for_ocr(self):
         self.assertEqual(self.manifest["scanned"], [5])
@@ -184,6 +199,7 @@ class LayoutTest(unittest.TestCase):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.tmp = Path(folder.name)
+        without_layout_model(self, self.tmp)
         doc = pymupdf.open()
         page = doc.new_page()
         page.insert_text((72, 80), "SPELLS AND RITUALS OF THE OLD WORLD", fontsize=26)

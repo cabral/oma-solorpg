@@ -15,6 +15,7 @@ What changed in each version of oma-solorpg. The version is the one in `manifest
 - The rest of Dragonbane on the Table and in the engine: a Magic section (`solo cast`, `prepare`, `learn`), heroic abilities (`solo ability`), a Dragon's choice on an attack (`solo dragon`), weapons that get damaged or break (`solo repair`, Mend and Artisan in Gear), the load, ranged attacks, monster rules, and journeys (`solo journey`, `camp`).
 - For contributors: CI on every pull request, CONTRIBUTING.md, issue and pull request templates, and a format version in every pack (`format = 1`).
 - `make uninstall`.
+- A layout model under `solo extract`, as step 1 of docs/INGESTION_PLAN.md. `make ingest-deps` installs Docling in an environment of its own; with it, the extract writes `structure/`, the regions of each page (tables, pictures and their classes, captions, headings, running heads) with the lines each one holds, and the manifest names the model. `solo structure <extract> [--inventory <pack>]` counts what it found against the extract's own tables and running heads and the inventory's tables. Without it nothing changes, and `make dragonbane` doesn't run it.
 - Kept dice can be written in words: `4d6 keep 3` and `4d6k3` keep the highest three, and `keep highest` or `keep lowest` say which, with the number left out for one die. `kh` and `kl` read as they did.
 
 ### Changed

@@ -11,12 +11,16 @@ and page by page it can be cited. This writes, into a folder outside the reposit
   tables/            tables found on a page: p0042-1.md as Markdown, p0042.png as a picture
   layout/0042.json   the page's lines with their place and style, and outline.json the bookmarks
                      with where each points (solo/layout.py): what the importers in solo/books/ read
+  structure/0042.json  the regions a layout model found on the page (tables, pictures, captions,
+                     running heads) and which lines each holds (solo/structure.py), when the
+                     ingest environment is installed (make ingest-deps); the manifest says which
 
 Page numbers are the PDF's (1 is the first page of the file); the printed number is kept
 in manifest.json when it differs, and in the page markers. The inventory cites PDF pages.
 
 This is the only part of solo that needs a library outside the standard one (PyMuPDF), and
-only here: play never reads a PDF.
+only here: play never reads a PDF. The layout model runs in its own environment, as a
+subprocess (solo/structure.py).
 """
 
 import hashlib
@@ -29,7 +33,7 @@ from pathlib import Path
 
 from . import SoloError, layout, library, packs
 
-GENERATED = ("pages", "chapters", "tables", "layout")
+GENERATED = ("pages", "chapters", "tables", "layout", "structure")
 # A page with less text than this and a picture on it is a scan: its text needs OCR.
 SCANNED_BELOW = 30
 # A roll table in an RPG is lines that start with a die result: "1", "2-5", "11–16".
@@ -41,8 +45,9 @@ def default_out(pdf):
     return library.home() / "sources" / packs.slug(Path(pdf).stem).replace("_", "-")
 
 
-def extract(pdf, out=None, *, tables=True):
-    """Write the folder described above and return its manifest."""
+def extract(pdf, out=None, *, tables=True, structure=True, say=None):
+    """Write the folder described above and return its manifest. `structure` runs the layout
+    model when it is installed; `say` gets a line before the slow part starts."""
     pymupdf = _pymupdf()
     pdf = Path(pdf).expanduser().resolve()
     if not pdf.is_file():
@@ -94,6 +99,10 @@ def extract(pdf, out=None, *, tables=True):
     _write_json(out / "outline.json", layout.outline(doc))
     if tables:
         (out / "tables" / "index.json").write_text(json.dumps(found, indent=2) + "\n", encoding="utf-8")
+    read, note = (None, None)
+    if structure:
+        from . import structure as model
+        read, note = model.read(pdf, out, width, say)
 
     manifest = {
         "source": pdf.name,
@@ -111,7 +120,11 @@ def extract(pdf, out=None, *, tables=True):
         "labels_from": "pdf" if any(_label(page) not in ("", str(i + 1)) for i, page in enumerate(doc)) else "footers" if printed else "none",
         # Headers and footers repeated across pages, taken out of the text (digits as #).
         "running": running,
+        # The layout model that wrote structure/ ({reader, version, seconds, pages, tables, pictures, maps}), or null.
+        "structure": read,
     }
+    if note:
+        manifest["structure_note"] = note
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return out, manifest
 

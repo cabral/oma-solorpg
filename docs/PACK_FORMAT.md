@@ -245,13 +245,15 @@ What `solo extract <pdf>` writes. Outside every pack and the repository: it is t
 A card deck or a book of art keeps some of its words in the pictures (a card's value, a title), and the PDF's text layer has none of them, or some. OCR of a decorated card is unreliable, so an agent reads such a page's picture and writes what it says into `picture/<page>.txt` (the same number as `pages/`, in a folder a new extract leaves alone). `solo audit` reads it after the page's own text, and says which pages it came from, since the pack is then checked against a reading, not against the PDF.
 
 ```
-manifest.json      source file and sha256, page count, printed page labels (`labels`, and `labels_from`: pdf, footers or none), pages that need OCR, `running` (headers and footers taken out of the text)
+manifest.json      source file and sha256, page count, printed page labels (`labels`, and `labels_from`: pdf, footers or none), pages that need OCR, `running` (headers and footers taken out of the text), `structure` (the layout model that wrote structure/: reader, version, seconds, pages, tables, pictures, maps; null without one, and `structure_note` says why)
 toc.json           [{ level, title, start, end, chars, file }]: from the PDF's bookmarks, else guessed from font sizes
 book.md            every page, after a ===== PAGE n (printed m) ===== marker
 pages/0042.txt     one page, columns read left then right, running heads taken out
 chapters/03-combat.md   one chapter's pages, the unit an agent reads in one go
 tables/index.json  [{ page, kind: grid | roll, file, image }]
 tables/p0042-1.md  a ruled table as Markdown; p0042.png the page as a picture, for tables the text scrambles
+layout/0042.json   the page's lines in reading order with their box, font, size, colour, column and words; outline.json the bookmarks and where each points
+structure/0042.json  with the layout model (make ingest-deps): { page, width, height, regions: [{ kind, bbox, lines, ref, caption, class }] }. kind is the model's label (table, picture, caption, section_header, text, page_header, page_footer, footnote, ...), bbox the region in the page's points from the top left, lines the indices of layout/0042.json's lines it holds, class a picture's (geographical_map, photograph, icon, other, ...)
 picture/0042.txt   yours, not the extract's: what you read off page 42's picture where the PDF has no text there
 ```
 

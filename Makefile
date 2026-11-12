@@ -27,13 +27,14 @@ override TONE     := $(value TONE)
 override CAMPAIGN := $(value CAMPAIGN)
 export PREMISE TONE CAMPAIGN
 
-.PHONY: help install uninstall deps dragonbane rules supplement check adventure check-adventure campaign campaign-next test qml-check site
+.PHONY: help install uninstall deps ingest-deps dragonbane rules supplement check adventure check-adventure campaign campaign-next test qml-check site
 
 help:
 	@echo "oma-solorpg"
 	@echo ""
 	@echo "  make install                         link solo, the GM skills and the Omarchy plugin; enable the plugin"
 	@echo "  make uninstall                       disable the plugin and remove the links make install made (your games and packs stay)"
+	@echo "  make ingest-deps                     install the layout model solo extract reads tables and pictures with (Docling, CPU, outside the system Python)"
 	@echo "  make dragonbane BOOKS=<folder of PDFs>  build Dragonbane's packs and adventures from your books (the rules, the Book of Magic, the card decks, the solo booklet, the Quickstart and the Adventure Book), no agent"
 	@echo "  make rules BOOK=<pdf> [SOLO_BOOK=<pdf>]  the same by an agent, for printings the importers don't know"
 	@echo "  make supplement ID=<id> BOOK=<pdf>   lay one more book over the rulebook: a card deck, the Book of Magic"
@@ -70,6 +71,21 @@ uninstall:
 deps:
 	@python3 -c "import pymupdf" 2>/dev/null || { \
 	  echo "solo extract needs PyMuPDF: on Omarchy, sudo pacman -S python-pymupdf (the README's Troubleshooting has other systems)"; exit 1; }
+
+# The layout model (solo/structure.py) in a virtual environment of its own: Docling with CPU PyTorch,
+# and its models fetched once into the same folder (a few hundred megabytes each), so a
+# conversion runs offline and removing the folder removes all of it. Arch's Python is externally managed,
+# so nothing goes into it. The version is the one solo/structure.py pins. Run again to repair it.
+INGEST  ?= $(or $(SOLO_INGEST),$(or $(XDG_DATA_HOME),$(HOME)/.local/share)/solo/ingest)
+DOCLING := $(shell sed -n 's/^DOCLING = "\(.*\)"/\1/p' solo/structure.py)
+
+ingest-deps:
+	@command -v uv >/dev/null 2>&1 || { echo "make ingest-deps needs uv: on Omarchy, sudo pacman -S uv"; exit 1; }
+	uv venv --allow-existing "$(INGEST)"
+	VIRTUAL_ENV="$(INGEST)" uv pip install --index-strategy unsafe-best-match \
+	  --extra-index-url https://download.pytorch.org/whl/cpu "docling==$(DOCLING)"
+	"$(INGEST)/bin/docling-tools" models download --output-dir "$(INGEST)/models" layout tableformer picture_classifier
+	@echo "the layout model is in $(INGEST): solo extract writes structure/ from now on"
 
 # Dragonbane's packs and adventures from your own PDFs, without an agent: each book an importer here knows is read by its bookmarks and layout, and what the pack holds is checked
 # against the book's pages. Nothing of a book is in this repository: the importers hold where things are and how to read them. REPLACE=1 builds again over packs made this way.
